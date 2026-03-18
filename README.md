@@ -40,6 +40,9 @@ The GUI lets you:
 - restore the full backup
 - restore only the selected tabs
 - relaunch Zen after restore if desired
+- open an About dialog with version, author, repository, and issue-reporting links
+
+For Linux desktop integration, the repository now also includes [`assets/restore-zen-session.desktop`](assets/restore-zen-session.desktop), including an `About Restore Zen Session...` desktop action. Install or reference that desktop file from your launcher if you want the panel or dock context menu to expose the About action.
 
 The GUI refuses to write a restore file while the selected profile appears to be open in Zen.
 

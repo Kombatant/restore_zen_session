@@ -9,6 +9,6 @@ fn main() -> anyhow::Result<()> {
     if cli.command.is_some() {
         cli::run(cli)
     } else {
-        gui::run(cli.profile)
+        gui::run(cli.profile, cli.about_dialog)
     }
 }

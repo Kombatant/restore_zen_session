@@ -61,6 +61,17 @@ ApplicationWindow {
         return Qt.locale().toString(snapshotDate, Locale.ShortFormat)
     }
 
+    menuBar: MenuBar {
+        Menu {
+            title: "&Help"
+
+            Action {
+                text: "About Restore Zen Session..."
+                onTriggered: aboutDialog.open()
+            }
+        }
+    }
+
     Connections {
         target: backendRef
         function onBackups_jsonChanged() { parseBackups() }
@@ -70,6 +81,8 @@ ApplicationWindow {
     Component.onCompleted: {
         parseBackups()
         parseActiveBackup()
+        if (backendRef && backendRef.show_about_on_startup)
+            aboutDialog.open()
         if (backendRef && backendRef.should_prompt_for_profile)
             profileFolderDialog.open()
     }
@@ -488,6 +501,49 @@ ApplicationWindow {
                         }
                     }
                 }
+            }
+        }
+    }
+
+    Dialog {
+        id: aboutDialog
+        modal: true
+        title: "About Restore Zen Session"
+        standardButtons: Dialog.Ok
+
+        contentItem: ColumnLayout {
+            width: 460
+            spacing: 10
+
+            Label {
+                text: "Restore Zen Session"
+                font.weight: Font.DemiBold
+                color: palette.windowText
+            }
+
+            Label {
+                text: "Version 0.3"
+                color: palette.windowText
+            }
+
+            Label {
+                text: "Author: Pete Vagiakos"
+                color: palette.windowText
+            }
+
+            Label {
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                textFormat: Text.RichText
+                onLinkActivated: link => Qt.openUrlExternally(link)
+                text: "GitHub: <a href=\"https://github.com/Kombatant/restore_zen_session\">https://github.com/Kombatant/restore_zen_session</a><br>Issues: <a href=\"https://github.com/Kombatant/restore_zen_session/issues\">https://github.com/Kombatant/restore_zen_session/issues</a>"
+            }
+
+            Label {
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                color: palette.placeholderText
+                text: "Report bugs or restoration issues through the GitHub issues page."
             }
         }
     }

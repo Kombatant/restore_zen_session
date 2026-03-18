@@ -10,6 +10,7 @@ use crate::zen::{self, BackupFile, CollectionSelection};
 cpp! {{
     #include <QtGui/QGuiApplication>
     #include <QtGui/QIcon>
+    #include <QtCore/QCoreApplication>
     #include <QtCore/QString>
 }}
 
@@ -65,6 +66,8 @@ struct AppBridge {
     zen_running_changed: qt_signal!(),
     launch_after_restore: qt_property!(bool; NOTIFY launch_after_restore_changed),
     launch_after_restore_changed: qt_signal!(),
+    show_about_on_startup: qt_property!(bool; NOTIFY show_about_on_startup_changed),
+    show_about_on_startup_changed: qt_signal!(),
     refresh: qt_method!(fn refresh(&mut self) { self.do_refresh(); }),
     select_backup: qt_method!(fn select_backup(&mut self, index: i32) { self.do_select_backup(index); }),
     toggle_collection: qt_method!(fn toggle_collection(&mut self, collection_index: i32, selected: bool) {
@@ -102,6 +105,8 @@ impl Default for AppBridge {
             zen_running_changed: Default::default(),
             launch_after_restore: false,
             launch_after_restore_changed: Default::default(),
+            show_about_on_startup: false,
+            show_about_on_startup_changed: Default::default(),
             refresh: Default::default(),
             select_backup: Default::default(),
             toggle_collection: Default::default(),
@@ -495,16 +500,17 @@ impl BackupState {
     }
 }
 
-pub fn run(profile: Option<PathBuf>) -> Result<()> {
+pub fn run(profile: Option<PathBuf>, show_about_on_startup: bool) -> Result<()> {
     let mut engine = QmlEngine::new();
     let mut bridge = AppBridge::default();
     if let Ok(current_dir) = std::env::current_dir() {
         let icon_path = current_dir.join("assets/restore-zen-session-icon.png");
-        set_application_icon(&icon_path);
+        configure_application(&icon_path);
     }
     let initial_profile = profile.or_else(|| zen::detect_default_profile().ok());
     bridge.state.borrow_mut().profile = initial_profile;
     bridge.should_prompt_for_profile = bridge.state.borrow().profile.is_none();
+    bridge.show_about_on_startup = show_about_on_startup;
     bridge.do_refresh();
     let bridge = QObjectBox::new(bridge);
     engine.set_object_property("backend".into(), bridge.pinned());
@@ -513,9 +519,13 @@ pub fn run(profile: Option<PathBuf>) -> Result<()> {
     Ok(())
 }
 
-fn set_application_icon(icon_path: &std::path::Path) {
+fn configure_application(icon_path: &std::path::Path) {
     let icon_path = QString::from(icon_path.to_string_lossy().as_ref());
     cpp!(unsafe [icon_path as "QString"] {
         QGuiApplication::setWindowIcon(QIcon(icon_path));
+        QCoreApplication::setApplicationName(QStringLiteral("Restore Zen Session"));
+        QCoreApplication::setApplicationVersion(QStringLiteral("0.3"));
+        QCoreApplication::setOrganizationName(QStringLiteral("Pete Vagiakos"));
+        QGuiApplication::setDesktopFileName(QStringLiteral("restore-zen-session"));
     });
 }

@@ -12,6 +12,9 @@ pub struct Cli {
     #[arg(long, global = true, env = "ZEN_PROFILE")]
     pub profile: Option<PathBuf>,
 
+    #[arg(long)]
+    pub about_dialog: bool,
+
     #[command(subcommand)]
     pub command: Option<Command>,
 }

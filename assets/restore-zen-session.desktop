@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Restore Zen Session
+Comment=Inspect and restore Zen Browser session backups
+Exec=zen_session_restore
+Icon=restore-zen-session
+Terminal=false
+Categories=Utility;
+Actions=About;
+
+[Desktop Action About]
+Name=About Restore Zen Session...
+Exec=zen_session_restore --about-dialog
