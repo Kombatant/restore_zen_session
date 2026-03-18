@@ -1,60 +1,53 @@
 # Zen Session Restore
 
-This repository now contains a Rust application for inspecting and restoring Zen session backups directly from a Zen profile.
+`zen-session-restore` is a native Rust utility for inspecting and restoring Zen Browser session backups from a local profile.
 
-## Why Rust
+It reads Zen backup snapshots from `zen-sessions-backup`, decodes Mozilla `.jsonlz4` session files, shows the contents as spaces or browser windows, and writes a chosen snapshot back to the live `zen-sessions.jsonlz4` session file. The application provides both a desktop GUI and a CLI.
 
-A normal browser extension cannot:
+## What The Application Does
 
-- enumerate `<profile>/zen-sessions-backup/`
-- copy a chosen backup back to `zen-sessions.jsonlz4`
-- restart Zen
+The app is built around the Zen profile directory, usually under `~/.zen/<profile>`.
 
-A native application can do all of that. This repository now starts with the native core and CLI first.
+It can:
 
-## Current Capabilities
-
-- Scan `<profile>/zen-sessions-backup/`
-- Detect and sort backup files like `zen-sessions-2026-03-18-15.jsonlz4`
-- Decode Mozilla `mozLz40` / `.jsonlz4` session files
-- Parse Zen-style session payloads with `spaces` and `tabs`
-- Show a Qt 6 desktop UI with:
-  - snapshot list
-  - per-space tab browser
-  - per-tab selection
-  - full or selective restore actions
-- Restore a chosen backup by copying it to `<profile>/zen-sessions.jsonlz4`
-- Write a filtered restore file containing only selected spaces/tabs
-- Optionally relaunch Zen after writing the restore file
+- auto-detect the most recent Zen profile that contains a `zen-sessions-backup` directory
+- scan and sort available backup snapshots
+- decode `.jsonlz4`, `.baklz4`, and plain `.json` session files
+- summarize Zen session data as spaces and tabs
+- summarize Firefox-style session data as windows and tabs
+- preview backup contents before restoring
+- restore an entire backup snapshot to `zen-sessions.jsonlz4`
+- write a filtered restore file containing only selected tabs
+- detect whether the target Zen profile is currently in use
+- optionally relaunch Zen after a restore from the GUI
 
 ## GUI
 
-Run the desktop app:
+Running the binary without a subcommand starts the Qt desktop interface:
 
 ```bash
 cargo run -- --profile "/path/to/Zen profile"
 ```
 
-If `--profile` is omitted, the app will try to auto-detect a profile under `~/.zen`.
+If `--profile` is omitted, the app tries to find a profile automatically under `~/.zen`. If no usable profile is found, the GUI prompts for one.
 
-Current GUI flow:
+The GUI lets you:
 
-1. On launch, the app scans `<profile>/zen-sessions-backup/`
-2. It shows snapshots newest first
-3. You pick a snapshot and inspect spaces/tabs
-4. You can deselect individual tabs or whole groups
-5. You can either:
-   - restore the full backup
-   - write a filtered restore file from the selected tabs
+- browse backup snapshots newest first
+- inspect spaces or windows inside a snapshot
+- review individual tabs, including pinned and essential flags
+- select or deselect entire collections or individual tabs
+- restore the full backup
+- restore only the selected tabs
+- relaunch Zen after restore if desired
 
-Important:
-
-- Zen should be fully closed before restoring
-- if Zen is still running, the app warns instead of writing the session file
+The GUI refuses to write a restore file while the selected profile appears to be open in Zen.
 
 ## CLI
 
-Build:
+The CLI is useful for scripting or quick inspection.
+
+Build the project:
 
 ```bash
 cargo build
@@ -66,66 +59,64 @@ List backups:
 cargo run -- --profile "/path/to/Zen profile" list
 ```
 
-Show a backup summary by index:
+Show a backup by index:
 
 ```bash
 cargo run -- --profile "/path/to/Zen profile" show 1
 ```
 
-Show a backup summary by filename:
+Show a backup by file name:
 
 ```bash
 cargo run -- --profile "/path/to/Zen profile" show zen-sessions-2026-03-18-15.jsonlz4
 ```
 
-Restore a backup into `zen-sessions.jsonlz4`:
+Restore a full backup:
 
 ```bash
 cargo run -- --profile "/path/to/Zen profile" restore 1 --yes
 ```
 
-Safety behavior:
-
-- `restore` refuses to overwrite the live session file unless `--yes` is provided
-- you should fully close Zen before running restore
-
-You can also provide the profile with an environment variable:
+You can also provide the profile path through `ZEN_PROFILE`:
 
 ```bash
 export ZEN_PROFILE="/path/to/Zen profile"
 cargo run -- list
 ```
 
-## Real Example
+## Restore Behavior And Safety
 
-Against your profile, the CLI is already able to:
+Restoring overwrites the live session file at `<profile>/zen-sessions.jsonlz4`.
 
-- list backups in `/home/kombatant/.zen/e0rlo4t3.Default (release)/zen-sessions-backup`
-- sort them newest first
-- parse real Zen spaces and tab counts
+Important constraints:
+
+- close Zen before restoring a session
+- the CLI requires `--yes` before it overwrites the live session file
+- the GUI checks whether the selected profile is currently in use and blocks restore when it is
+- selective restore rewrites a valid session file containing only the chosen tabs
+
+## Requirements
+
+This project is written in Rust and uses Qt via `qmetaobject` / `qttypes` for the desktop UI.
+
+You need:
+
+- a Rust toolchain
+- Qt 6 development libraries available to the build
+- access to a local Zen profile directory
+
+In the current workspace, `cargo build` completes successfully.
 
 ## Project Layout
 
-- `src/main.rs`: CLI entrypoint
-- `src/cli.rs`: command parsing and command execution
-- `src/mozlz4.rs`: Mozilla `.jsonlz4` decoding
-- `src/zen.rs`: Zen backup scanning, parsing, summarizing, and restore copy logic
-- `RESEARCH.md`: notes about Zen/Firefox session formats
+- `src/main.rs`: chooses GUI or CLI mode
+- `src/cli.rs`: command-line parsing and command handlers
+- `src/gui.rs`: Qt bridge and restore workflows
+- `src/zen.rs`: profile detection, backup scanning, parsing, filtering, and restore logic
+- `src/mozlz4.rs`: Mozilla LZ4 encode/decode helpers
+- `qml/main.qml`: desktop interface
+- `RESEARCH.md`: notes on Zen and Firefox session formats
 
-## What Is Not Built Yet
+## Notes
 
-- desktop GUI
-- selective per-space restore copy flow
-- selective per-tab restore into Zen session files
-- folder/group reconstruction
-- automatic Zen restart after restore
-- automatic Zen profile detection
-
-## Next Step
-
-The current app already has the right native shape. The next improvement would be polishing the GUI behavior and theme further, especially:
-
-- Breeze/KDE styling details
-- confirmation flows
-- profile chooser and settings
-- more faithful selective restore behavior for groups/folders
+This tool operates directly on local session backup files. It is not a browser extension and does not depend on Zen sync or remote services.
