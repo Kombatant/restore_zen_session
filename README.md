@@ -42,7 +42,7 @@ The GUI lets you:
 - relaunch Zen after restore if desired
 - open an About dialog with version, author, repository, and issue-reporting links
 
-For Linux desktop integration, the repository now also includes [`assets/restore-zen-session.desktop`](assets/restore-zen-session.desktop), including an `About Restore Zen Session...` desktop action. Install or reference that desktop file from your launcher if you want the panel or dock context menu to expose the About action.
+For Linux desktop integration, the repository now also includes [`assets/restore-zen-session.desktop`](assets/restore-zen-session.desktop), including an `About Restore Zen Session...` desktop action. Install or reference that desktop file from your launcher if you want the panel or dock context menu to expose the About action. The GUI only advertises that desktop file to Qt when it can actually find a matching `restore-zen-session.desktop` on disk, which avoids host portal registration errors for standalone release binaries.
 
 The GUI refuses to write a restore file while the selected profile appears to be open in Zen.
 

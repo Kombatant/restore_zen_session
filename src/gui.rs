@@ -1,4 +1,9 @@
-use std::{cell::RefCell, path::PathBuf, rc::Rc};
+use std::{
+    cell::RefCell,
+    env,
+    path::{Path, PathBuf},
+    rc::Rc,
+};
 
 use anyhow::{Context, Result};
 use cpp::cpp;
@@ -505,7 +510,7 @@ pub fn run(profile: Option<PathBuf>, show_about_on_startup: bool) -> Result<()> 
     let mut bridge = AppBridge::default();
     if let Ok(current_dir) = std::env::current_dir() {
         let icon_path = current_dir.join("assets/restore-zen-session-icon.png");
-        configure_application(&icon_path);
+        configure_application(&icon_path, resolve_desktop_file_name());
     }
     let initial_profile = profile.or_else(|| zen::detect_default_profile().ok());
     bridge.state.borrow_mut().profile = initial_profile;
@@ -519,13 +524,80 @@ pub fn run(profile: Option<PathBuf>, show_about_on_startup: bool) -> Result<()> 
     Ok(())
 }
 
-fn configure_application(icon_path: &std::path::Path) {
+fn configure_application(icon_path: &Path, desktop_file_name: Option<&str>) {
     let icon_path = QString::from(icon_path.to_string_lossy().as_ref());
-    cpp!(unsafe [icon_path as "QString"] {
+    cpp!(unsafe [
+        icon_path as "QString"
+    ] {
         QGuiApplication::setWindowIcon(QIcon(icon_path));
         QCoreApplication::setApplicationName(QStringLiteral("Restore Zen Session"));
         QCoreApplication::setApplicationVersion(QStringLiteral("0.3"));
         QCoreApplication::setOrganizationName(QStringLiteral("Pete Vagiakos"));
-        QGuiApplication::setDesktopFileName(QStringLiteral("restore-zen-session"));
     });
+
+    if let Some(desktop_file_name) = desktop_file_name {
+        let desktop_file_name = QString::from(desktop_file_name);
+        cpp!(unsafe [desktop_file_name as "QString"] {
+            QGuiApplication::setDesktopFileName(desktop_file_name);
+        });
+    }
+}
+
+fn resolve_desktop_file_name() -> Option<&'static str> {
+    if desktop_file_exists() {
+        return Some("restore-zen-session");
+    }
+
+    None
+}
+
+fn desktop_file_exists() -> bool {
+    if let Some(path) = env::var_os("XDG_DESKTOP_FILE_HINT") {
+        if Path::new(&path).is_file() {
+            return true;
+        }
+    }
+
+    if let Ok(executable_path) = env::current_exe() {
+        if let Some(executable_dir) = executable_path.parent() {
+            let candidates = [
+                executable_dir.join("restore-zen-session.desktop"),
+                executable_dir.join("assets/restore-zen-session.desktop"),
+            ];
+            for candidate in candidates {
+                if candidate.is_file() {
+                    return true;
+                }
+            }
+        }
+    }
+
+    if let Some(local_share) = dirs::data_local_dir() {
+        if local_share
+            .join("applications/restore-zen-session.desktop")
+            .is_file()
+        {
+            return true;
+        }
+    }
+
+    if let Some(data_dirs) = env::var_os("XDG_DATA_DIRS") {
+        for dir in env::split_paths(&data_dirs) {
+            if dir.join("applications/restore-zen-session.desktop").is_file() {
+                return true;
+            }
+        }
+    }
+
+    let fallback_dirs = [
+        PathBuf::from("/usr/local/share"),
+        PathBuf::from("/usr/share"),
+    ];
+    for dir in fallback_dirs {
+        if dir.join("applications/restore-zen-session.desktop").is_file() {
+            return true;
+        }
+    }
+
+    false
 }
