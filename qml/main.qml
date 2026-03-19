@@ -188,7 +188,7 @@ ApplicationWindow {
             RowLayout {
                 Layout.fillWidth: true
                 Layout.alignment: Qt.AlignTop
-                spacing: 12
+                spacing: 0
 
                 ColumnLayout {
                     Layout.fillWidth: true
@@ -205,16 +205,6 @@ ApplicationWindow {
                         text: "Google Drive / Google One"
                         color: palette.placeholderText
                     }
-                }
-
-                ToolButton {
-                    text: "\u00d7"
-                    font.pixelSize: 22
-                    font.weight: Font.Light
-                    implicitWidth: 36
-                    implicitHeight: 36
-                    Layout.alignment: Qt.AlignTop | Qt.AlignRight
-                    onClicked: syncDrawer.close()
                 }
             }
 
