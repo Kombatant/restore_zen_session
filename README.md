@@ -24,6 +24,9 @@ It can:
 
 ## GUI
 
+<img width="2352" height="1643" alt="image" src="https://github.com/user-attachments/assets/2ecefc5b-da76-4dbf-b56f-ff301a1216e3" />
+
+
 Running the binary without a subcommand starts the Qt desktop interface:
 
 ```bash
