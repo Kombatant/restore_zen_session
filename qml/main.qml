@@ -7,15 +7,54 @@ ApplicationWindow {
     id: window
     width: 1440
     height: 920
+    minimumWidth: 1180
+    minimumHeight: 760
     visible: true
     title: "Zen Session Restore"
-    color: palette.window
+    color: "#050916"
+    flags: Qt.Window | Qt.FramelessWindowHint
 
     property var backupsModel: []
     property var activeBackup: ({})
     property var backendRef: typeof backend !== "undefined" ? backend : null
     property bool syncInFlight: false
     property string repositoryReadmeUrl: "https://github.com/Kombatant/restore_zen_session#readme"
+    property int currentSection: 0
+    property int kdeBaseFontPx: Qt.application.font.pixelSize > 0 ? Qt.application.font.pixelSize : 13
+    property int kdeTinyFontPx: Math.max(10, kdeBaseFontPx - 3)
+    property int kdeSmallFontPx: Math.max(11, kdeBaseFontPx - 1)
+    property int kdeBodyFontPx: kdeBaseFontPx
+    property int kdeUiFontPx: kdeBaseFontPx + 1
+    property int kdeSidebarDateFontPx: kdeBaseFontPx + 2
+    property int kdeSectionFontPx: kdeBaseFontPx + 4
+    property int kdeTitleFontPx: kdeBaseFontPx + 11
+
+    property color outerBackground: "#0f1216"
+    property color shellBackground: "#232629"
+    property color titlebarBackground: "#1b1e20"
+    property color sidebarBackground: "#2a2e32"
+    property color surfaceBackground: "#262b2f"
+    property color cardBackground: "#2d3237"
+    property color subtleCardBackground: "#31363b"
+    property color rowBackground: "#2b3035"
+    property color hoverBackground: "#343a40"
+    property color frameColor: "#4d5053"
+    property color textPrimary: "#e8edf2"
+    property color textMuted: "#a0abb5"
+    property color textFaint: "#6f7a84"
+    property color accentBlue: "#3daee9"
+    property color accentBlueSoft: "#173648"
+    property color accentBlueFaint: "#112734"
+    property color accentBlueBorder: "#5bc1f3"
+    property color warningFill: "#4a3315"
+    property color warningBorder: "#bf8a32"
+    property color warningText: "#f4c96d"
+    property color criticalFill: "#4a2529"
+    property color criticalBorder: "#d16a73"
+    property color criticalText: "#f2a5ae"
+    property color successFill: "#153328"
+    property color successBorder: "#4a9b7a"
+    property color successText: "#8fe0bd"
 
     function parseBackups() {
         if (!backendRef) {
@@ -41,17 +80,6 @@ ApplicationWindow {
         }
     }
 
-    function tabBadgeText(tab) {
-        let parts = []
-        if (tab.pinned)
-            parts.push("Pinned")
-        if (tab.essential)
-            parts.push("Essential")
-        if (!tab.restorable)
-            parts.push("Unsupported")
-        return parts.join(" • ")
-    }
-
     function localizedSnapshotLabel(savedAtMs, fallbackLabel) {
         if (savedAtMs === undefined || savedAtMs === null)
             return fallbackLabel
@@ -63,19 +91,358 @@ ApplicationWindow {
         return Qt.locale().toString(snapshotDate, Locale.ShortFormat)
     }
 
-    menuBar: MenuBar {
-        Menu {
-            title: "&Help"
+    function restorableTabsInCollection(collection) {
+        if (!collection || !collection.tabs)
+            return 0
 
-            Action {
-                text: "About Restore Zen Session..."
-                onTriggered: aboutDialog.open()
+        let total = 0
+        for (let i = 0; i < collection.tabs.length; ++i) {
+            if (collection.tabs[i].restorable)
+                total += 1
+        }
+        return total
+    }
+
+    function restorableTabsInBackup() {
+        if (!activeBackup.collections)
+            return 0
+
+        let total = 0
+        for (let i = 0; i < activeBackup.collections.length; ++i)
+            total += restorableTabsInCollection(activeBackup.collections[i])
+        return total
+    }
+
+    function toggleAllInActiveBackup() {
+        if (!backendRef || !activeBackup.collections)
+            return
+
+        const totalRestorable = restorableTabsInBackup()
+        const shouldSelect = !(totalRestorable > 0 && activeBackup.selectedTabs >= totalRestorable)
+        for (let i = 0; i < activeBackup.collections.length; ++i)
+            backendRef.toggle_collection(activeBackup.collections[i].index, shouldSelect)
+    }
+
+    function syncFooterLabel() {
+        if (!backendRef)
+            return "\u25cf GOOGLE SYNC UNAVAILABLE"
+        if (!backendRef.google_oauth_ready)
+            return "\u25cf GOOGLE SYNC NOT CONFIGURED"
+        if (!backendRef.google_auth_connected)
+            return "\u25cf GOOGLE SYNC DISCONNECTED"
+        return "\u25cf CONNECTED TO GOOGLE SYNC"
+    }
+
+    function syncFooterColor() {
+        if (!backendRef)
+            return textFaint
+        if (!backendRef.google_oauth_ready)
+            return warningText
+        if (!backendRef.google_auth_connected)
+            return criticalText
+        return accentBlue
+    }
+
+    function hasMultipleCollections() {
+        return !!activeBackup.collections && activeBackup.collections.length > 1
+    }
+
+    function statusChipLabel() {
+        if (!backendRef)
+            return "Offline"
+        return backendRef.zen_running ? "Profile In Use" : "Profile Available"
+    }
+
+    function statusChipFill() {
+        if (!backendRef)
+            return subtleCardBackground
+        return backendRef.zen_running ? criticalFill : surfaceBackground
+    }
+
+    function statusChipBorder() {
+        if (!backendRef)
+            return frameColor
+        return backendRef.zen_running ? criticalBorder : frameColor
+    }
+
+    function statusChipColor() {
+        if (!backendRef)
+            return textMuted
+        return backendRef.zen_running ? criticalText : textPrimary
+    }
+
+    function tabAccentColor(tab) {
+        const key = (((tab && tab.url) ? tab.url : "") + " " + ((tab && tab.title) ? tab.title : "")).toLowerCase()
+
+        if (key.indexOf("weather") !== -1)
+            return "#2387d3"
+        if (key.indexOf("outlook") !== -1 || key.indexOf("mail") !== -1 || key.indexOf("inbox") !== -1)
+            return "#2c76f0"
+        if (key.indexOf("github") !== -1)
+            return "#6c7580"
+        if (key.indexOf("google") !== -1)
+            return "#5d6772"
+        if (key.indexOf("docker") !== -1)
+            return "#3976c5"
+        if (key.indexOf("terminal") !== -1 || key.indexOf("shell") !== -1)
+            return "#6c7580"
+        if (tab && tab.essential)
+            return "#c08b31"
+        if (tab && tab.pinned)
+            return accentBlue
+        return "#56606b"
+    }
+
+    function tabAccentFillColor(tab) {
+        const key = (((tab && tab.url) ? tab.url : "") + " " + ((tab && tab.title) ? tab.title : "")).toLowerCase()
+
+        if (key.indexOf("weather") !== -1)
+            return "#18364b"
+        if (key.indexOf("outlook") !== -1 || key.indexOf("mail") !== -1 || key.indexOf("inbox") !== -1)
+            return "#19365a"
+        if (key.indexOf("github") !== -1)
+            return "#30353b"
+        if (key.indexOf("google") !== -1)
+            return "#303741"
+        if (key.indexOf("docker") !== -1)
+            return "#1b3552"
+        if (key.indexOf("terminal") !== -1 || key.indexOf("shell") !== -1)
+            return "#30353b"
+        if (tab && tab.essential)
+            return "#4b3615"
+        if (tab && tab.pinned)
+            return "#1c4761"
+        return "#31363b"
+    }
+
+    function tabMonogram(tab) {
+        if (tab && tab.url) {
+            let host = tab.url.replace(/^https?:\/\//, "").split("/")[0]
+            let parts = host.split(".").filter(function(part) { return part.length > 0 && part !== "www" })
+            if (parts.length > 0) {
+                let base = parts.length > 1 ? parts[parts.length - 2] : parts[0]
+                return base.substring(0, Math.min(2, base.length)).toUpperCase()
             }
+        }
+
+        const source = tab && tab.title ? tab.title : "ZS"
+        const words = source.split(/[\s\-_:.|/]+/).filter(function(part) { return part.length > 0 })
+        if (words.length >= 2)
+            return (words[0][0] + words[1][0]).toUpperCase()
+        return source.substring(0, Math.min(2, source.length)).toUpperCase()
+    }
+
+    function tabGlyph(tab) {
+        const key = (((tab && tab.url) ? tab.url : "") + " " + ((tab && tab.title) ? tab.title : "")).toLowerCase()
+
+        if (key.indexOf("weather") !== -1)
+            return "\u2601"
+        if (key.indexOf("outlook") !== -1 || key.indexOf("mail") !== -1 || key.indexOf("inbox") !== -1)
+            return "\u2709"
+        if (key.indexOf("github") !== -1)
+            return "\u2398"
+        if (key.indexOf("google") !== -1 || key.indexOf("search") !== -1)
+            return "\u2315"
+        if (key.indexOf("docker") !== -1 || key.indexOf("code") !== -1)
+            return "<>"
+        if (key.indexOf("terminal") !== -1 || key.indexOf("shell") !== -1)
+            return "\u2332"
+        return "\u25e7"
+    }
+
+    component ChromeButton: Button {
+        id: control
+        property bool danger: false
+
+        implicitWidth: 28
+        implicitHeight: 28
+        padding: 0
+        hoverEnabled: true
+
+        background: Rectangle {
+            radius: 4
+            color: {
+                if (!control.enabled)
+                    return "transparent"
+                if (control.danger)
+                    return control.down ? "#6b2d34" : (control.hovered ? "#59292e" : "transparent")
+                return control.down ? "#3b4046" : (control.hovered ? "#32373c" : "transparent")
+            }
+            border.width: control.hovered ? 1 : 0
+            border.color: control.danger ? criticalBorder : frameColor
+        }
+
+        contentItem: Label {
+            text: control.text
+            color: control.danger ? criticalText : textMuted
+            horizontalAlignment: Text.AlignHCenter
+            verticalAlignment: Text.AlignVCenter
+            font.pixelSize: window.kdeBodyFontPx
+            font.weight: Font.Medium
+        }
+    }
+
+    component ActionButton: Button {
+        id: control
+        property bool primary: false
+        property bool compact: false
+        property bool warning: false
+
+        hoverEnabled: true
+        leftPadding: compact ? 12 : 16
+        rightPadding: compact ? 12 : 16
+        topPadding: compact ? 7 : 10
+        bottomPadding: compact ? 7 : 10
+
+        background: Rectangle {
+            radius: 4
+            opacity: control.enabled ? 1.0 : 0.5
+            color: {
+                if (control.primary)
+                    return control.down ? "#3297cb" : accentBlue
+                if (control.warning)
+                    return control.down ? "#59401a" : "#40311a"
+                return control.down ? "#363c42" : (control.hovered ? "#343a40" : "#2d3237")
+            }
+            border.width: 1
+            border.color: {
+                if (control.primary)
+                    return accentBlueBorder
+                if (control.warning)
+                    return warningBorder
+                return frameColor
+            }
+        }
+
+        contentItem: Label {
+            text: control.text
+            horizontalAlignment: Text.AlignHCenter
+            verticalAlignment: Text.AlignVCenter
+            color: control.primary ? "#ffffff" : (control.warning ? warningText : textPrimary)
+            font.pixelSize: control.compact ? window.kdeSmallFontPx : window.kdeBodyFontPx
+            font.weight: Font.Medium
+        }
+    }
+
+    component AccentCheckBox: CheckBox {
+        id: control
+        spacing: 8
+        hoverEnabled: true
+
+        indicator: Rectangle {
+            implicitWidth: 16
+            implicitHeight: 16
+            radius: 3
+            color: control.checked ? accentBlue : "transparent"
+            border.width: 1
+            border.color: control.enabled ? (control.checked ? accentBlueBorder : "#7d8790") : frameColor
+
+            Label {
+                anchors.centerIn: parent
+                visible: control.checked
+                text: "\u2713"
+                color: "#ffffff"
+                font.pixelSize: 11
+                font.weight: Font.DemiBold
+            }
+        }
+
+        contentItem: Label {
+            text: control.text
+            leftPadding: control.indicator.width + control.spacing
+            verticalAlignment: Text.AlignVCenter
+            elide: Text.ElideRight
+            color: control.enabled ? textPrimary : textFaint
+            font.pixelSize: window.kdeBodyFontPx
+        }
+    }
+
+    component AccentSpinBox: SpinBox {
+        id: control
+        implicitWidth: 88
+        implicitHeight: 32
+        editable: false
+
+        contentItem: TextInput {
+            text: control.displayText
+            readOnly: true
+            horizontalAlignment: Text.AlignHCenter
+            verticalAlignment: Text.AlignVCenter
+            color: textPrimary
+            font.pixelSize: window.kdeBodyFontPx
+            selectedTextColor: textPrimary
+            selectionColor: accentBlueSoft
+        }
+
+        up.indicator: Rectangle {
+            implicitWidth: 24
+            implicitHeight: 30
+            x: control.width - width - 1
+            y: 1
+            radius: 4
+            color: control.up.pressed ? "#363c42" : "transparent"
+
+            Label {
+                anchors.centerIn: parent
+                text: "+"
+                color: textMuted
+                font.pixelSize: window.kdeUiFontPx
+                font.weight: Font.DemiBold
+            }
+        }
+
+        down.indicator: Rectangle {
+            implicitWidth: 24
+            implicitHeight: 30
+            x: 1
+            y: 1
+            radius: 4
+            color: control.down.pressed ? "#363c42" : "transparent"
+
+            Label {
+                anchors.centerIn: parent
+                text: "-"
+                color: textMuted
+                font.pixelSize: window.kdeSectionFontPx
+                font.weight: Font.DemiBold
+            }
+        }
+
+        background: Rectangle {
+            radius: 4
+            color: titlebarBackground
+            border.width: 1
+            border.color: frameColor
+        }
+    }
+
+    component MetaChip: Rectangle {
+        id: chip
+        property string label: ""
+        property color fillColor: surfaceBackground
+        property color strokeColor: frameColor
+        property color labelColor: textMuted
+
+        implicitHeight: 20
+        implicitWidth: chipLabel.implicitWidth + 14
+        radius: 10
+        color: fillColor
+        border.width: 1
+        border.color: strokeColor
+
+        Label {
+            id: chipLabel
+            anchors.centerIn: parent
+            text: chip.label
+            color: chip.labelColor
+            font.pixelSize: window.kdeTinyFontPx
+            font.weight: Font.DemiBold
         }
     }
 
     Connections {
         target: backendRef
+
         function onBackups_jsonChanged() { parseBackups() }
         function onActive_backup_jsonChanged() { parseActiveBackup() }
     }
@@ -89,575 +456,358 @@ ApplicationWindow {
             profileFolderDialog.open()
     }
 
-    header: Rectangle {
-        implicitHeight: 84
-        color: palette.window
-        border.color: palette.mid
+    background: Rectangle {
+        color: outerBackground
+    }
 
-        RowLayout {
+    Rectangle {
+        anchors.fill: parent
+        anchors.margins: 0
+        radius: 0
+        clip: true
+        color: shellBackground
+        border.width: 0
+        border.color: "transparent"
+
+        ColumnLayout {
             anchors.fill: parent
-            anchors.margins: 16
-            spacing: 16
+            spacing: 0
 
-            ColumnLayout {
+            Rectangle {
                 Layout.fillWidth: true
-                spacing: 2
+                implicitHeight: 40
+                color: titlebarBackground
+                border.width: 1
+                border.color: "#00000000"
 
-                Label {
-                    text: "Zen Session Restore"
-                    font.pixelSize: 24
-                    font.weight: Font.DemiBold
-                    color: palette.windowText
+                MouseArea {
+                    anchors.fill: parent
+                    acceptedButtons: Qt.LeftButton
+                    onPressed: function(mouse) {
+                        if (mouse.button === Qt.LeftButton)
+                            window.startSystemMove()
+                    }
                 }
 
                 RowLayout {
-                    Layout.fillWidth: true
-                    spacing: 8
+                    anchors.fill: parent
+                    anchors.leftMargin: 12
+                    anchors.rightMargin: 8
+                    spacing: 10
 
-                    Rectangle {
-                        radius: 7
-                        color: backendRef && backendRef.zen_running ? palette.highlight : palette.base
-                        border.color: backendRef && backendRef.zen_running ? palette.highlight : palette.mid
-                        implicitHeight: profileStatus.implicitHeight + 10
-                        implicitWidth: profileStatus.implicitWidth + 18
+                    RowLayout {
+                        spacing: 8
+
+                        Item {
+                            width: 18
+                            height: 18
+
+                            Label {
+                                anchors.left: parent.left
+                                anchors.top: parent.top
+                                text: "\u2726"
+                                color: accentBlue
+                                font.pixelSize: 10
+                            }
+
+                            Label {
+                                anchors.right: parent.right
+                                anchors.bottom: parent.bottom
+                                text: "\u2726"
+                                color: "#8dd8ff"
+                                font.pixelSize: 8
+                            }
+                        }
 
                         Label {
-                            id: profileStatus
-                            anchors.centerIn: parent
-                            text: backendRef && backendRef.zen_running ? "Profile in use" : "Profile available"
-                            color: backendRef && backendRef.zen_running ? palette.highlightedText : palette.windowText
+                            text: "Zen Session Restore"
+                            color: textPrimary
+                            font.pixelSize: window.kdeSmallFontPx
                             font.weight: Font.Medium
                         }
                     }
 
-                    Label {
-                        Layout.fillWidth: true
-                        text: backendRef && backendRef.profile_path.length > 0 ? backendRef.profile_path : "No Zen profile loaded"
-                        elide: Text.ElideMiddle
-                        color: palette.placeholderText
-                    }
-                }
-            }
-
-            RowLayout {
-                spacing: 10
-
-                Button {
-                    text: "Refresh"
-                    enabled: !!backendRef
-                    onClicked: if (backendRef) backendRef.refresh()
-                }
-
-                Button {
-                    text: "Open Profile Folder"
-                    enabled: !!backendRef
-                    onClicked: profileFolderDialog.open()
-                }
-
-                Button {
-                    text: syncDrawer.visible ? "Hide Cloud Sync ◂" : "Open Cloud Sync ▸"
-                    enabled: !!backendRef
-                    onClicked: {
-                        if (syncDrawer.visible)
-                            syncDrawer.close()
-                        else
-                            syncDrawer.open()
-                    }
-                }
-            }
-        }
-    }
-
-    Drawer {
-        id: syncDrawer
-        edge: Qt.RightEdge
-        width: Math.min(window.width * 0.33, 420)
-        height: window.height
-        modal: false
-
-        background: Rectangle {
-            color: palette.window
-            border.color: palette.mid
-        }
-
-        ColumnLayout {
-            anchors.fill: parent
-            anchors.margins: 18
-            spacing: 14
-
-            RowLayout {
-                Layout.fillWidth: true
-                Layout.alignment: Qt.AlignTop
-                spacing: 0
-
-                ColumnLayout {
-                    Layout.fillWidth: true
-                    spacing: 2
-
-                    Label {
-                        text: "Cloud Sync"
-                        font.pixelSize: 22
-                        font.weight: Font.DemiBold
-                        color: palette.windowText
-                    }
-
-                    Label {
-                        text: "Google Drive / Google One"
-                        color: palette.placeholderText
-                    }
-                }
-            }
-
-            Label {
-                Layout.fillWidth: true
-                text: backendRef ? backendRef.cloud_sync_status_text : "Configure Google Drive sync for zen-sessions-backup."
-                wrapMode: Text.WordWrap
-                color: palette.windowText
-            }
-
-            Rectangle {
-                Layout.fillWidth: true
-                visible: !backendRef || !backendRef.google_oauth_ready
-                radius: 12
-                color: Qt.rgba(palette.highlight.r, palette.highlight.g, palette.highlight.b, 0.12)
-                border.color: palette.highlight
-                implicitHeight: googleConfigWarning.implicitHeight + 24
-
-                Label {
-                    id: googleConfigWarning
-                    anchors.fill: parent
-                    anchors.margins: 12
-                    wrapMode: Text.WordWrap
-                    color: palette.windowText
-                    textFormat: Text.RichText
-                    linkColor: palette.link
-                    text: "Cloud Sync is disabled because <b>google.json</b> was not found next to the app. " +
-                        "Add your Google Client ID and Client Secret in that file, then reopen the app. " +
-                        "See the GitHub README for setup details and the required file format: " +
-                        "<a href=\"" + repositoryReadmeUrl + "\">" + repositoryReadmeUrl + "</a>"
-                    onLinkActivated: function(link) { Qt.openUrlExternally(link) }
-                }
-            }
-
-            Rectangle {
-                Layout.fillWidth: true
-                radius: 12
-                color: palette.base
-                border.color: palette.mid
-                implicitHeight: syncColumn.implicitHeight + 24
-
-                ColumnLayout {
-                    id: syncColumn
-                    anchors.fill: parent
-                    anchors.margins: 12
-                    spacing: 12
-
-                    CheckBox {
-                        text: "Sync backup folder"
-                        checked: backendRef ? backendRef.cloud_sync_enabled : false
-                        enabled: !!backendRef && backendRef.google_oauth_ready
-                        onToggled: if (backendRef) backendRef.set_cloud_sync_enabled(checked)
-                    }
-
                     Item {
                         Layout.fillWidth: true
-                        implicitHeight: actionFlow.implicitHeight
-
-                        Flow {
-                            id: actionFlow
-                            width: parent.width
-                            spacing: 10
-
-                            Button {
-                                text: "Sync Now"
-                                highlighted: true
-                                enabled: !!backendRef && backendRef.google_oauth_ready && backendRef.cloud_sync_enabled && backendRef.google_auth_connected && !syncInFlight
-                                onClicked: {
-                                    if (!backendRef)
-                                        return
-                                    syncInFlight = true
-                                    Qt.callLater(function() {
-                                        backendRef.sync_cloud_backup()
-                                        syncInFlight = false
-                                    })
-                                }
-                            }
-
-                            Button {
-                                text: backendRef && backendRef.google_auth_connected ? "Reconnect Google Drive" : "Connect Google Drive"
-                                enabled: !!backendRef && backendRef.google_oauth_ready
-                                onClicked: if (backendRef) backendRef.connect_google_drive()
-                            }
-
-                            Button {
-                                text: "Disconnect"
-                                enabled: !!backendRef && backendRef.google_oauth_ready && backendRef.google_auth_connected
-                                onClicked: if (backendRef) backendRef.disconnect_google_drive()
-                            }
-                        }
                     }
 
                     RowLayout {
-                        spacing: 10
+                        spacing: 4
 
-                        Label {
-                            text: "Retention"
-                            color: palette.windowText
-                            Layout.alignment: Qt.AlignVCenter
+                        ChromeButton {
+                            text: "\u21bb"
+                            enabled: !!backendRef
+                            onClicked: if (backendRef) backendRef.refresh()
                         }
 
-                        SpinBox {
-                            from: 1
-                            to: 12
-                            value: backendRef ? backendRef.retention_months : 3
-                            enabled: !!backendRef && backendRef.google_oauth_ready
-                            onValueModified: if (backendRef) backendRef.set_retention_months(value)
-                        }
-
-                        Label {
-                            text: "months"
-                            color: palette.placeholderText
-                            Layout.alignment: Qt.AlignVCenter
+                        ChromeButton {
+                            text: "🗀"
+                            enabled: !!backendRef
+                            onClicked: profileFolderDialog.open()
                         }
                     }
 
-                    Label {
-                        Layout.fillWidth: true
-                        wrapMode: Text.WordWrap
-                        color: palette.windowText
-                        text: backendRef && backendRef.google_oauth_ready
-                            ? (backendRef.google_auth_connected
-                                ? "Google Drive is connected for this app."
-                                : "Connect in your browser to grant Google Drive access.")
-                            : "Google Drive sign-in is disabled until google.json is added beside the app."
+                    Rectangle {
+                        width: 1
+                        height: 18
+                        color: frameColor
+                        opacity: 0.85
                     }
 
-                    Label {
-                        Layout.fillWidth: true
-                        wrapMode: Text.WordWrap
-                        color: palette.placeholderText
-                        text: "The app opens your browser for Google sign-in, stores the refresh token locally, and mirrors zen-sessions-backup into Google Drive under Backup/Zen."
-                    }
+                    RowLayout {
+                        spacing: 4
 
-                    ColumnLayout {
-                        Layout.fillWidth: true
-                        spacing: 6
-                        visible: syncInFlight
-
-                        ProgressBar {
-                            Layout.fillWidth: true
-                            indeterminate: true
+                        ChromeButton {
+                            text: "?"
+                            onClicked: aboutDialog.open()
                         }
 
-                        Label {
-                            Layout.fillWidth: true
-                            wrapMode: Text.WordWrap
-                            color: palette.windowText
-                            text: "Syncing backups with Google Drive..."
+                        ChromeButton {
+                            text: "\u2500"
+                            onClicked: window.showMinimized()
+                        }
+
+                        ChromeButton {
+                            text: "\u25a1"
+                            onClicked: {
+                                if (window.visibility === Window.Maximized)
+                                    window.showNormal()
+                                else
+                                    window.showMaximized()
+                            }
+                        }
+
+                        ChromeButton {
+                            text: "\u2715"
+                            danger: true
+                            onClicked: window.close()
                         }
                     }
                 }
             }
-        }
-    }
-
-    ColumnLayout {
-        anchors.fill: parent
-        anchors.margins: 16
-        spacing: 16
-
-        Rectangle {
-            Layout.fillWidth: true
-            radius: 12
-            color: palette.base
-            border.color: palette.mid
-            implicitHeight: statusRow.implicitHeight + 20
 
             RowLayout {
-                id: statusRow
-                anchors.fill: parent
-                anchors.margins: 12
-                spacing: 12
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                spacing: 0
 
-                ColumnLayout {
-                    Layout.fillWidth: true
-                    spacing: 4
+                Rectangle {
+                    Layout.preferredWidth: 330
+                    Layout.fillHeight: true
+                    color: sidebarBackground
+                    border.width: 1
+                    border.color: "#00000000"
 
-                    Label {
-                        text: "Status"
-                        font.weight: Font.DemiBold
-                        color: palette.windowText
+                    Rectangle {
+                        anchors.top: parent.top
+                        anchors.right: parent.right
+                        anchors.bottom: parent.bottom
+                        width: 1
+                        color: frameColor
                     }
 
-                    Label {
-                        Layout.fillWidth: true
-                        text: backendRef ? backendRef.status_text : "Loading Zen backups..."
-                        wrapMode: Text.WordWrap
-                        color: palette.placeholderText
+                    ColumnLayout {
+                        anchors.fill: parent
+                        spacing: 0
+
+                        Item {
+                            Layout.fillWidth: true
+                            implicitHeight: 70
+
+                            ColumnLayout {
+                                anchors.fill: parent
+                                anchors.margins: 16
+                                spacing: 6
+
+                                Label {
+                                    text: "SNAPSHOT SESSIONS"
+                                    color: textFaint
+                                    font.pixelSize: window.kdeSmallFontPx
+                                    font.weight: Font.DemiBold
+                                    font.letterSpacing: 1.3
+                                }
+
+                            }
+                        }
+
+                        ListView {
+                            id: snapshotList
+                            Layout.fillWidth: true
+                            Layout.fillHeight: true
+                            clip: true
+                            spacing: 8
+                            model: backupsModel
+                            leftMargin: 10
+                            rightMargin: snapshotScrollBar.visible ? snapshotScrollBar.width + 12 : 10
+                            topMargin: 6
+                            bottomMargin: 10
+
+                            ScrollBar.vertical: ScrollBar {
+                                id: snapshotScrollBar
+                                policy: ScrollBar.AsNeeded
+                            }
+
+                            delegate: Rectangle {
+                                id: snapshotCard
+                                required property var modelData
+                                width: snapshotList.width - snapshotList.leftMargin - snapshotList.rightMargin
+                                height: 80
+                                radius: 4
+                                color: modelData.active ? "#2c3c47" : (snapshotHover.containsMouse ? subtleCardBackground : "transparent")
+                                border.width: 1
+                                border.color: modelData.active ? "#2b81ad" : "transparent"
+
+                                MouseArea {
+                                    id: snapshotHover
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    onClicked: if (backendRef) backendRef.select_backup(snapshotCard.modelData.index)
+                                }
+
+                                ColumnLayout {
+                                    anchors.fill: parent
+                                    anchors.margins: 12
+                                    spacing: 3
+
+                                    Label {
+                                        Layout.fillWidth: true
+                                        text: window.localizedSnapshotLabel(snapshotCard.modelData.savedAtMs, snapshotCard.modelData.snapshotLabel)
+                                        elide: Text.ElideRight
+                                        color: snapshotCard.modelData.active ? accentBlue : textPrimary
+                                        font.pixelSize: window.kdeSidebarDateFontPx
+                                        font.weight: Font.Medium
+                                    }
+
+                                    Label {
+                                        Layout.fillWidth: true
+                                        text: (snapshotCard.modelData.collections + " spaces \u2022 " + snapshotCard.modelData.tabs + " tabs").toUpperCase()
+                                        elide: Text.ElideRight
+                                        color: snapshotCard.modelData.active ? "#86d3fa" : textFaint
+                                        font.pixelSize: window.kdeTinyFontPx
+                                        font.weight: Font.DemiBold
+                                        font.letterSpacing: 0.7
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
 
                 Rectangle {
-                    radius: 8
-                    color: "transparent"
-                    border.color: palette.mid
-                    implicitHeight: syncStatusLabel.implicitHeight + 12
-                    implicitWidth: syncStatusLabel.implicitWidth + 20
-                    visible: !!backendRef
-
-                    Label {
-                        id: syncStatusLabel
-                        anchors.centerIn: parent
-                        text: syncInFlight
-                            ? "Syncing"
-                            : (backendRef && backendRef.cloud_sync_enabled ? "Sync enabled" : "Sync off")
-                        color: palette.windowText
-                        font.weight: Font.Medium
-                    }
-                }
-            }
-        }
-
-        SplitView {
-            Layout.fillWidth: true
-            Layout.fillHeight: true
-            orientation: Qt.Horizontal
-
-            Frame {
-                SplitView.minimumWidth: 280
-                SplitView.preferredWidth: 320
-                SplitView.maximumWidth: 380
-                padding: 0
-
-                background: Rectangle {
-                    radius: 14
-                    color: palette.base
-                    border.color: palette.mid
-                }
-
-                contentItem: ColumnLayout {
-                    spacing: 0
-
-                    Item {
-                        Layout.fillWidth: true
-                        implicitHeight: snapshotsHeader.implicitHeight + 30
-
-                        ColumnLayout {
-                            id: snapshotsHeader
-                            anchors.fill: parent
-                            anchors.margins: 16
-                            spacing: 4
-
-                            Label {
-                                text: "Snapshots"
-                                font.pixelSize: 20
-                                font.weight: Font.DemiBold
-                                color: palette.windowText
-                            }
-
-                            Label {
-                                text: backupsModel.length > 0 ? "Choose a backup to inspect before restoring." : "No snapshots found in the current profile."
-                                wrapMode: Text.WordWrap
-                                color: palette.placeholderText
-                            }
-                        }
-                    }
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    color: shellBackground
 
                     Rectangle {
-                        Layout.fillWidth: true
-                        height: 1
-                        color: palette.mid
-                    }
+                        anchors.top: parent.top
+                        anchors.right: parent.right
+                        anchors.bottom: parent.bottom
+                        width: 360
+                        color: "transparent"
 
-                    ListView {
-                        id: snapshotsList
-                        Layout.fillWidth: true
-                        Layout.fillHeight: true
-                        clip: true
-                        spacing: 10
-                        model: backupsModel
-                        leftMargin: 14
-                        rightMargin: snapshotsScrollBar.visible ? snapshotsScrollBar.width + 20 : 14
-                        topMargin: 14
-                        bottomMargin: 14
-                        ScrollBar.vertical: ScrollBar {
-                            id: snapshotsScrollBar
-                            policy: ScrollBar.AsNeeded
-                            visible: snapshotsList.contentHeight > snapshotsList.height
-                        }
-
-                        delegate: ItemDelegate {
-                            required property var modelData
-                            width: snapshotsList.width - snapshotsList.leftMargin - snapshotsList.rightMargin
-                            height: 104
-                            padding: 0
-
-                            background: Rectangle {
-                                radius: 12
-                                color: modelData.active ? palette.highlight : palette.window
-                                border.color: modelData.active ? palette.highlight : palette.mid
-                                border.width: modelData.active ? 2 : 1
-                            }
-
-                            contentItem: ColumnLayout {
-                                anchors.fill: parent
-                                anchors.margins: 14
-                                spacing: 6
-
-                                Label {
-                                    Layout.fillWidth: true
-                                    text: window.localizedSnapshotLabel(modelData.savedAtMs, modelData.snapshotLabel)
-                                    elide: Text.ElideRight
-                                    font.pixelSize: 17
-                                    font.weight: Font.DemiBold
-                                    color: modelData.active ? palette.highlightedText : palette.windowText
-                                }
-
-                                Label {
-                                    Layout.fillWidth: true
-                                    text: modelData.fileName
-                                    elide: Text.ElideMiddle
-                                    color: modelData.active ? palette.highlightedText : palette.placeholderText
-                                }
-
-                                RowLayout {
-                                    spacing: 8
-
-                                    Rectangle {
-                                        radius: 7
-                                        color: "transparent"
-                                        border.color: modelData.active ? palette.highlightedText : palette.mid
-                                        implicitWidth: snapshotSpaces.implicitWidth + 14
-                                        implicitHeight: snapshotSpaces.implicitHeight + 8
-
-                                        Label {
-                                            id: snapshotSpaces
-                                            anchors.centerIn: parent
-                                            text: modelData.collections + " spaces"
-                                            color: modelData.active ? palette.highlightedText : palette.windowText
-                                        }
-                                    }
-
-                                    Rectangle {
-                                        radius: 7
-                                        color: "transparent"
-                                        border.color: modelData.active ? palette.highlightedText : palette.mid
-                                        implicitWidth: snapshotTabs.implicitWidth + 14
-                                        implicitHeight: snapshotTabs.implicitHeight + 8
-
-                                        Label {
-                                            id: snapshotTabs
-                                            anchors.centerIn: parent
-                                            text: modelData.tabs + " tabs"
-                                            color: modelData.active ? palette.highlightedText : palette.windowText
-                                        }
-                                    }
-                                }
-                            }
-
-                            onClicked: if (backendRef) backendRef.select_backup(modelData.index)
+                        gradient: Gradient {
+                            orientation: Gradient.Horizontal
+                            GradientStop { position: 0.0; color: "#003daee9" }
+                            GradientStop { position: 1.0; color: "#353daee9" }
                         }
                     }
-                }
-            }
 
-            Frame {
-                SplitView.fillWidth: true
-                padding: 0
+                    ColumnLayout {
+                        anchors.fill: parent
+                        spacing: 0
 
-                background: Rectangle {
-                    radius: 14
-                    color: palette.base
-                    border.color: palette.mid
-                }
+                        Item {
+                            Layout.fillWidth: true
+                            implicitHeight: 104
 
-                contentItem: ColumnLayout {
-                    spacing: 0
+                            Label {
+                                anchors.left: parent.left
+                                anchors.top: parent.top
+                                anchors.leftMargin: 24
+                                anchors.topMargin: 20
+                                text: "Zen Session Restore"
+                                color: textPrimary
+                                font.pixelSize: window.kdeTitleFontPx
+                                font.weight: Font.Normal
+                            }
 
-                    Item {
-                        Layout.fillWidth: true
-                        implicitHeight: detailsHeader.implicitHeight + 36
+                            ActionButton {
+                                anchors.right: parent.right
+                                anchors.top: parent.top
+                                anchors.rightMargin: 28
+                                anchors.topMargin: 18
+                                visible: currentSection === 0
+                                text: "\u2299 Restore Selected"
+                                primary: true
+                                enabled: !!backendRef && !!activeBackup.selectedTabs && activeBackup.selectedTabs > 0
+                                leftPadding: 24
+                                rightPadding: 24
+                                topPadding: 13
+                                bottomPadding: 13
+                                onClicked: selectiveRestoreDialog.open()
 
-                        ColumnLayout {
-                            id: detailsHeader
-                            anchors.fill: parent
-                            anchors.margins: 18
-                            spacing: 12
-
-                            RowLayout {
-                                Layout.fillWidth: true
-                                spacing: 16
-
-                                ColumnLayout {
-                                    Layout.fillWidth: true
-                                    spacing: 4
-
-                                    Label {
-                                        Layout.fillWidth: true
-                                        text: activeBackup.fileName ? window.localizedSnapshotLabel(activeBackup.savedAtMs, activeBackup.snapshotLabel) : "Select a snapshot"
-                                        elide: Text.ElideMiddle
-                                        font.pixelSize: 24
-                                        font.weight: Font.DemiBold
-                                        color: palette.windowText
-                                    }
-
-                                    Label {
-                                        Layout.fillWidth: true
-                                        text: activeBackup.fileName ? activeBackup.fileName : "Choose a snapshot from the left to inspect its spaces and tabs."
-                                        elide: Text.ElideMiddle
-                                        color: palette.placeholderText
-                                    }
+                                TapHandler {
+                                    acceptedButtons: Qt.RightButton
+                                    onTapped: restoreMoreMenu.open()
                                 }
+                            }
+                        }
 
-                                CheckBox {
-                                    id: launchAfterRestore
-                                    text: "Launch Zen after restore"
-                                    checked: backendRef ? backendRef.launch_after_restore : false
-                                    enabled: !!backendRef
-                                    onToggled: if (backendRef) backendRef.set_launch_after_restore(checked)
-                                }
+                        Item {
+                            Layout.fillWidth: true
+                            implicitHeight: 50
+
+                            Rectangle {
+                                anchors.left: parent.left
+                                anchors.right: parent.right
+                                anchors.bottom: parent.bottom
+                                anchors.leftMargin: 24
+                                anchors.rightMargin: 24
+                                height: 1
+                                color: frameColor
                             }
 
                             RowLayout {
-                                Layout.fillWidth: true
-                                spacing: 10
-                                visible: !!activeBackup.fileName
+                                anchors.left: parent.left
+                                anchors.right: parent.right
+                                anchors.bottom: parent.bottom
+                                anchors.leftMargin: 24
+                                anchors.rightMargin: 24
+                                spacing: 22
 
                                 Repeater {
                                     model: [
-                                        { "label": "Tabs", "value": activeBackup.totalTabs || 0 },
-                                        { "label": "Selected", "value": activeBackup.selectedTabs || 0 },
-                                        { "label": "Spaces", "value": activeBackup.collections ? activeBackup.collections.length : 0 }
+                                        { "label": "Snapshot", "index": 0 },
+                                        { "label": "Google Sync", "index": 1 }
                                     ]
 
-                                    delegate: Rectangle {
+                                    delegate: Item {
                                         required property var modelData
-                                        radius: 10
-                                        color: palette.window
-                                        border.color: palette.mid
-                                        Layout.preferredWidth: 140
-                                        implicitHeight: statColumn.implicitHeight + 20
+                                        implicitWidth: tabLabel.implicitWidth
+                                        implicitHeight: 34
 
-                                        ColumnLayout {
-                                            id: statColumn
-                                            anchors.centerIn: parent
-                                            spacing: 3
+                                        MouseArea {
+                                            anchors.fill: parent
+                                            onClicked: currentSection = modelData.index
+                                        }
 
-                                            Label {
-                                                Layout.fillWidth: true
-                                                text: modelData.label
-                                                horizontalAlignment: Text.AlignHCenter
-                                                color: palette.placeholderText
-                                            }
+                                        Label {
+                                            id: tabLabel
+                                            anchors.left: parent.left
+                                            anchors.bottom: parent.bottom
+                                            anchors.bottomMargin: 8
+                                            text: modelData.label
+                                            color: currentSection === modelData.index ? accentBlue : textMuted
+                                            font.pixelSize: window.kdeUiFontPx
+                                            font.weight: Font.Medium
+                                        }
 
-                                            Label {
-                                                Layout.fillWidth: true
-                                                text: modelData.value
-                                                horizontalAlignment: Text.AlignHCenter
-                                                color: palette.windowText
-                                                font.pixelSize: 22
-                                                font.weight: Font.DemiBold
-                                            }
+                                        Rectangle {
+                                            anchors.left: parent.left
+                                            anchors.right: parent.right
+                                            anchors.bottom: parent.bottom
+                                            height: 2
+                                            color: currentSection === modelData.index ? accentBlue : "transparent"
                                         }
                                     }
                                 }
@@ -665,206 +815,670 @@ ApplicationWindow {
                                 Item {
                                     Layout.fillWidth: true
                                 }
-
-                                Button {
-                                    text: "Restore Full Backup"
-                                    enabled: !!backendRef && !!activeBackup.fileName
-                                    onClicked: fullRestoreDialog.open()
-                                }
-
-                                Button {
-                                    text: "Restore Selected"
-                                    highlighted: true
-                                    enabled: !!backendRef && !!activeBackup.selectedTabs && activeBackup.selectedTabs > 0
-                                    onClicked: selectiveRestoreDialog.open()
-                                }
                             }
                         }
-                    }
 
-                    Rectangle {
-                        Layout.fillWidth: true
-                        height: 1
-                        color: palette.mid
-                    }
+                        StackLayout {
+                            Layout.fillWidth: true
+                            Layout.fillHeight: true
+                            currentIndex: currentSection
 
-                    ScrollView {
-                        id: detailsScroll
-                        Layout.fillWidth: true
-                        Layout.fillHeight: true
-                        padding: 14
-                        clip: true
+                            Item {
+                                Layout.fillWidth: true
+                                Layout.fillHeight: true
 
-                        Item {
-                            width: detailsScroll.availableWidth
-                            implicitHeight: detailsColumn.implicitHeight
+                                ColumnLayout {
+                                    anchors.fill: parent
+                                    anchors.leftMargin: 24
+                                    anchors.rightMargin: 28
+                                    anchors.topMargin: 12
+                                    anchors.bottomMargin: 18
+                                    spacing: 16
 
-                            ColumnLayout {
-                                id: detailsColumn
-                                width: parent.width
-                                spacing: 14
-
-                                Rectangle {
-                                    Layout.fillWidth: true
-                                    visible: !activeBackup.fileName
-                                    radius: 12
-                                    color: palette.window
-                                    border.color: palette.mid
-                                    implicitHeight: emptyStateColumn.implicitHeight + 40
-
-                                    ColumnLayout {
-                                        id: emptyStateColumn
-                                        anchors.centerIn: parent
-                                        spacing: 8
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 10
 
                                         Label {
-                                            text: "No snapshot selected"
-                                            font.pixelSize: 20
-                                            font.weight: Font.DemiBold
-                                            horizontalAlignment: Text.AlignHCenter
-                                            color: palette.windowText
+                                            text: "Spaces"
+                                            color: textPrimary
+                                            font.pixelSize: window.kdeSectionFontPx
+                                            font.weight: Font.Medium
                                         }
 
                                         Label {
-                                            text: "Pick a snapshot from the left to review its spaces, tabs, and restore options."
-                                            horizontalAlignment: Text.AlignHCenter
-                                            wrapMode: Text.WordWrap
-                                            color: palette.placeholderText
+                                            Layout.fillWidth: true
+                                            text: activeBackup.collections
+                                                ? activeBackup.collections.length + " spaces \u2022 " + (activeBackup.totalTabs || 0) + " tabs \u2022 " + (activeBackup.selectedTabs || 0) + " selected"
+                                                : "No snapshot selected"
+                                            color: textMuted
+                                            font.pixelSize: window.kdeBodyFontPx
+                                        }
+
+                                        ActionButton {
+                                            compact: true
+                                            text: "Select / Deselect All"
+                                            primary: restorableTabsInBackup() > 0 && activeBackup.selectedTabs >= restorableTabsInBackup()
+                                            enabled: !!backendRef && !!activeBackup.collections && activeBackup.collections.length > 0
+                                            onClicked: toggleAllInActiveBackup()
                                         }
                                     }
-                                }
 
-                                Repeater {
-                                    model: activeBackup.collections ? activeBackup.collections : []
-
-                                    delegate: Rectangle {
-                                        required property var modelData
-                                        property int collectionIndex: modelData.index
+                                    ScrollView {
+                                        id: snapshotScroll
                                         Layout.fillWidth: true
-                                        radius: 12
-                                        color: palette.window
-                                        border.color: palette.mid
-                                        implicitHeight: collectionContent.implicitHeight + 28
+                                        Layout.fillHeight: true
+                                        clip: true
 
-                                        ColumnLayout {
-                                            id: collectionContent
-                                            anchors.fill: parent
-                                            anchors.margins: 14
-                                            spacing: 12
+                                        Item {
+                                            width: snapshotScroll.availableWidth
+                                            implicitHeight: snapshotColumn.implicitHeight
 
-                                            RowLayout {
-                                                Layout.fillWidth: true
-                                                spacing: 10
+                                            ColumnLayout {
+                                                id: snapshotColumn
+                                                width: parent.width
+                                                spacing: 12
 
-                                                ColumnLayout {
+                                                Rectangle {
                                                     Layout.fillWidth: true
-                                                    spacing: 2
+                                                    visible: !activeBackup.fileName
+                                                    radius: 4
+                                                    color: subtleCardBackground
+                                                    border.width: 1
+                                                    border.color: frameColor
+                                                    implicitHeight: emptyStateContent.implicitHeight + 40
 
-                                                    Label {
-                                                        text: modelData.title
-                                                        font.pixelSize: 18
-                                                        font.weight: Font.DemiBold
-                                                        color: palette.windowText
-                                                    }
+                                                    ColumnLayout {
+                                                        id: emptyStateContent
+                                                        anchors.centerIn: parent
+                                                        spacing: 8
 
-                                                    Label {
-                                                        text: modelData.selectedCount + " selected • " + modelData.tabCount + " tabs"
-                                                        color: palette.placeholderText
-                                                    }
-                                                }
-
-                                                Button {
-                                                    text: modelData.selectedCount === modelData.tabCount ? "Deselect All" : "Select All"
-                                                    flat: true
-                                                    onClicked: if (backendRef) backendRef.toggle_collection(modelData.index, modelData.selectedCount !== modelData.tabCount)
-                                                }
-                                            }
-
-                                            Repeater {
-                                                model: modelData.tabs
-
-                                                delegate: Rectangle {
-                                                    required property var modelData
-                                                    Layout.fillWidth: true
-                                                    radius: 10
-                                                    color: "transparent"
-                                                    border.color: modelData.selected ? palette.highlight : palette.mid
-                                                    border.width: modelData.selected ? 2 : 1
-                                                    implicitHeight: tabContent.implicitHeight + 20
-
-                                                    RowLayout {
-                                                        id: tabContent
-                                                        anchors.fill: parent
-                                                        anchors.margins: 10
-                                                        spacing: 10
-
-                                                        CheckBox {
-                                                            Layout.alignment: Qt.AlignTop
-                                                            checked: modelData.selected
-                                                            enabled: modelData.restorable
-                                                            onToggled: if (backendRef) backendRef.toggle_tab(collectionIndex, modelData.index, checked)
+                                                        Label {
+                                                            text: "No snapshot selected"
+                                                            color: textPrimary
+                                                            font.pixelSize: 20
+                                                            font.weight: Font.Medium
+                                                            horizontalAlignment: Text.AlignHCenter
                                                         }
 
+                                                        Label {
+                                                            text: "Pick a snapshot from the left rail to inspect its spaces, tabs, and restore options."
+                                                            color: textMuted
+                                                            wrapMode: Text.WordWrap
+                                                            horizontalAlignment: Text.AlignHCenter
+                                                        }
+                                                    }
+                                                }
+
+                                                Repeater {
+                                                    model: activeBackup.collections ? activeBackup.collections : []
+
+                                                    delegate: Item {
+                                                        id: collectionCard
+                                                        required property var modelData
+                                                        property int collectionIndex: modelData.index
+                                                        property int selectableTabCount: window.restorableTabsInCollection(modelData)
+                                                        Layout.fillWidth: true
+                                                        implicitHeight: collectionBody.implicitHeight
+
                                                         ColumnLayout {
-                                                            Layout.fillWidth: true
-                                                            Layout.alignment: Qt.AlignTop
-                                                            spacing: 4
+                                                            id: collectionBody
+                                                            anchors.left: parent.left
+                                                            anchors.right: parent.right
+                                                            spacing: 10
 
                                                             RowLayout {
                                                                 Layout.fillWidth: true
                                                                 spacing: 10
+                                                                visible: false
 
-                                                                Label {
+                                                                ColumnLayout {
                                                                     Layout.fillWidth: true
-                                                                    text: modelData.title
-                                                                    elide: Text.ElideRight
-                                                                    color: palette.windowText
-                                                                    font.weight: Font.Medium
-                                                                    maximumLineCount: 1
-                                                                }
-
-                                                                Rectangle {
-                                                                    visible: window.tabBadgeText(modelData).length > 0
-                                                                    radius: 7
-                                                                    color: palette.base
-                                                                    border.color: palette.mid
-                                                                    implicitWidth: badgeLabel.implicitWidth + 16
-                                                                    implicitHeight: badgeLabel.implicitHeight + 10
+                                                                    spacing: 2
 
                                                                     Label {
-                                                                        id: badgeLabel
-                                                                        anchors.centerIn: parent
-                                                                        text: window.tabBadgeText(modelData)
-                                                                        color: palette.windowText
+                                                                        text: collectionCard.modelData.title
+                                                                        color: textPrimary
+                                                                        font.pixelSize: 14
                                                                         font.weight: Font.Medium
+                                                                    }
+
+                                                                    RowLayout {
+                                                                        Layout.fillWidth: true
+                                                                        spacing: 8
+
+                                                                        Label {
+                                                                            text: collectionCard.modelData.selectedCount + " selected \u2022 " + collectionCard.modelData.tabCount + " tabs"
+                                                                            color: textMuted
+                                                                            font.pixelSize: 12
+                                                                        }
+
+                                                                        Label {
+                                                                            visible: !!collectionCard.modelData.workspaceId
+                                                                            text: collectionCard.modelData.workspaceId ? "Workspace " + collectionCard.modelData.workspaceId : ""
+                                                                            color: textFaint
+                                                                            font.pixelSize: 11
+                                                                        }
+                                                                    }
+                                                                }
+
+                                                                ActionButton {
+                                                                    compact: true
+                                                                    text: collectionCard.selectableTabCount > 0 && collectionCard.modelData.selectedCount >= collectionCard.selectableTabCount ? "Deselect All" : "Select All"
+                                                                    enabled: !!backendRef && collectionCard.selectableTabCount > 0
+                                                                    visible: false
+                                                                    onClicked: if (backendRef) backendRef.toggle_collection(collectionCard.modelData.index, !(collectionCard.selectableTabCount > 0 && collectionCard.modelData.selectedCount >= collectionCard.selectableTabCount))
+                                                                }
+                                                            }
+
+                                                            Repeater {
+                                                                model: collectionCard.modelData.tabs
+
+                                                                delegate: Rectangle {
+                                                                    required property var modelData
+                                                                    Layout.fillWidth: true
+                                                                    radius: 4
+                                                                    color: modelData.selected ? "#2c353b" : "#2e3237"
+                                                                    border.width: 1
+                                                                    border.color: modelData.selected ? "#2b81ad" : "#55595d"
+                                                                    implicitHeight: tabRowLayout.implicitHeight + 18
+
+                                                                    RowLayout {
+                                                                        id: tabRowLayout
+                                                                        anchors.fill: parent
+                                                                        anchors.margins: 12
+                                                                        spacing: 12
+
+                                                                        AccentCheckBox {
+                                                                            Layout.alignment: Qt.AlignTop
+                                                                            checked: modelData.selected
+                                                                            enabled: modelData.restorable
+                                                                            onToggled: if (backendRef) backendRef.toggle_tab(collectionCard.collectionIndex, modelData.index, checked)
+                                                                        }
+
+                                                                        Rectangle {
+                                                                            Layout.alignment: Qt.AlignTop
+                                                                            width: 38
+                                                                            height: 38
+                                                                            radius: 4
+                                                                            color: "#243551"
+                                                                            border.width: 0
+
+                                                                            Label {
+                                                                                anchors.centerIn: parent
+                                                                                text: window.tabGlyph(modelData)
+                                                                                color: modelData.selected ? accentBlue : "#a9b4c2"
+                                                                                font.pixelSize: window.tabGlyph(modelData) === "<>" ? 13 : 16
+                                                                                font.weight: Font.DemiBold
+                                                                            }
+                                                                        }
+
+                                                                        ColumnLayout {
+                                                                            Layout.fillWidth: true
+                                                                            Layout.alignment: Qt.AlignTop
+                                                                            spacing: 4
+
+                                                                            RowLayout {
+                                                                                Layout.fillWidth: true
+                                                                                spacing: 8
+
+                                                                                Label {
+                                                                                    Layout.fillWidth: true
+                                                                                    text: modelData.title
+                                                                                    elide: Text.ElideRight
+                                                                                    maximumLineCount: 1
+                                                                                    color: textPrimary
+                                                                                    font.pixelSize: window.kdeUiFontPx
+                                                                                    font.weight: Font.Medium
+                                                                                }
+
+                                                                                MetaChip {
+                                                                                    visible: !!modelData.pinned
+                                                                                    label: "Pinned"
+                                                                                    fillColor: "#374052"
+                                                                                    strokeColor: "transparent"
+                                                                                    labelColor: modelData.selected ? "#56c2f7" : "#a8b2c1"
+                                                                                }
+
+                                                                                MetaChip {
+                                                                                    visible: !!modelData.essential
+                                                                                    label: "Essential"
+                                                                                    fillColor: "#3f341b"
+                                                                                    strokeColor: warningBorder
+                                                                                    labelColor: warningText
+                                                                                }
+
+                                                                                MetaChip {
+                                                                                    visible: !modelData.restorable
+                                                                                    label: "Unsupported"
+                                                                                    fillColor: "#432326"
+                                                                                    strokeColor: criticalBorder
+                                                                                    labelColor: criticalText
+                                                                                }
+                                                                            }
+
+                                                                            Label {
+                                                                                Layout.fillWidth: true
+                                                                                text: modelData.url ? modelData.url : "Unsupported or missing URL"
+                                                                                elide: Text.ElideRight
+                                                                                maximumLineCount: 1
+                                                                                color: modelData.selected ? "#44b8ee" : "#8c949d"
+                                                                                font.pixelSize: window.kdeBodyFontPx
+                                                                            }
+                                                                        }
                                                                     }
                                                                 }
                                                             }
-
-                                                            Label {
-                                                                Layout.fillWidth: true
-                                                                text: modelData.url ? modelData.url : "Unsupported or missing URL"
-                                                                elide: Text.ElideRight
-                                                                maximumLineCount: 1
-                                                                clip: true
-                                                                color: palette.placeholderText
-                                                            }
                                                         }
                                                     }
+                                                }
+
+                                                Item {
+                                                    Layout.fillHeight: true
                                                 }
                                             }
                                         }
                                     }
                                 }
+                            }
+
+                            Item {
+                                Layout.fillWidth: true
+                                Layout.fillHeight: true
+
+                                ScrollView {
+                                    anchors.fill: parent
+                                    clip: true
+
+                                    Item {
+                                        width: parent.width
+                                        implicitHeight: syncColumn.implicitHeight
+
+                                        ColumnLayout {
+                                            id: syncColumn
+                                            width: parent.width
+                                            anchors.leftMargin: 0
+                                            anchors.rightMargin: 0
+                                            spacing: 16
+
+                                            Rectangle {
+                                                Layout.fillWidth: true
+                                                Layout.leftMargin: 24
+                                                Layout.rightMargin: 24
+                                                Layout.topMargin: 18
+                                                radius: 4
+                                                color: subtleCardBackground
+                                                border.width: 1
+                                                border.color: frameColor
+                                                implicitHeight: syncSummary.implicitHeight + 28
+
+                                                ColumnLayout {
+                                                    id: syncSummary
+                                                    anchors.fill: parent
+                                                    anchors.margins: 14
+                                                    spacing: 8
+
+                                                    Label {
+                                                        text: "Google Drive / Google One"
+                                                        color: textPrimary
+                                                        font.pixelSize: 20
+                                                        font.weight: Font.Medium
+                                                    }
+
+                                                    Label {
+                                                        Layout.fillWidth: true
+                                                        wrapMode: Text.WordWrap
+                                                        text: backendRef ? backendRef.cloud_sync_status_text : "Configure Google Drive sync for zen-sessions-backup."
+                                                        color: textMuted
+                                                    }
+                                                }
+                                            }
+
+                                            Rectangle {
+                                                Layout.fillWidth: true
+                                                Layout.leftMargin: 24
+                                                Layout.rightMargin: 24
+                                                visible: !backendRef || !backendRef.google_oauth_ready
+                                                radius: 4
+                                                color: warningFill
+                                                border.width: 1
+                                                border.color: warningBorder
+                                                implicitHeight: googleWarning.implicitHeight + 24
+
+                                                Label {
+                                                    id: googleWarning
+                                                    anchors.fill: parent
+                                                    anchors.margins: 12
+                                                    wrapMode: Text.WordWrap
+                                                    textFormat: Text.RichText
+                                                    color: warningText
+                                                    linkColor: accentBlue
+                                                    text: "Cloud Sync is disabled because <b>google.json</b> was not found next to the app. Add your Google Client ID and Client Secret in that file, then reopen the app. See the GitHub README for setup details: <a href=\"" + repositoryReadmeUrl + "\">" + repositoryReadmeUrl + "</a>"
+                                                    onLinkActivated: function(link) { Qt.openUrlExternally(link) }
+                                                }
+                                            }
+
+                                            Rectangle {
+                                                Layout.fillWidth: true
+                                                Layout.leftMargin: 24
+                                                Layout.rightMargin: 24
+                                                radius: 4
+                                                color: subtleCardBackground
+                                                border.width: 1
+                                                border.color: frameColor
+                                                implicitHeight: syncControls.implicitHeight + 28
+
+                                                ColumnLayout {
+                                                    id: syncControls
+                                                    anchors.fill: parent
+                                                    anchors.margins: 14
+                                                    spacing: 14
+
+                                                    AccentCheckBox {
+                                                        text: "Sync backup folder"
+                                                        checked: backendRef ? backendRef.cloud_sync_enabled : false
+                                                        enabled: !!backendRef && backendRef.google_oauth_ready
+                                                        onToggled: if (backendRef) backendRef.set_cloud_sync_enabled(checked)
+                                                    }
+
+                                                    ColumnLayout {
+                                                        spacing: 10
+
+                                                        Item {
+                                                            Layout.preferredWidth: Math.min(syncControls.width, 280)
+                                                            Layout.preferredHeight: syncActionsColumn.implicitHeight
+
+                                                            ColumnLayout {
+                                                                id: syncActionsColumn
+                                                                anchors.fill: parent
+                                                                spacing: 10
+
+                                                                ActionButton {
+                                                                    Layout.fillWidth: true
+                                                                    text: "Sync Now"
+                                                                    primary: true
+                                                                    enabled: !!backendRef && backendRef.google_oauth_ready && backendRef.cloud_sync_enabled && backendRef.google_auth_connected && !syncInFlight && !backendRef.cloud_sync_in_progress
+                                                                    onClicked: {
+                                                                        if (!backendRef)
+                                                                            return
+                                                                        syncInFlight = true
+                                                                        Qt.callLater(function() {
+                                                                            backendRef.sync_cloud_backup()
+                                                                            syncInFlight = false
+                                                                        })
+                                                                    }
+                                                                }
+
+                                                                ActionButton {
+                                                                    Layout.fillWidth: true
+                                                                    text: backendRef && backendRef.google_auth_connected ? "Reconnect Google Drive" : "Connect Google Drive"
+                                                                    enabled: !!backendRef && backendRef.google_oauth_ready
+                                                                    onClicked: if (backendRef) backendRef.connect_google_drive()
+                                                                }
+
+                                                                ActionButton {
+                                                                    Layout.fillWidth: true
+                                                                    text: "Disconnect"
+                                                                    warning: true
+                                                                    enabled: !!backendRef && backendRef.google_oauth_ready && backendRef.google_auth_connected
+                                                                    onClicked: if (backendRef) backendRef.disconnect_google_drive()
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+
+                                                    RowLayout {
+                                                        spacing: 10
+
+                                                        Label {
+                                                            text: "Retention"
+                                                            color: textPrimary
+                                                        }
+
+                                                        AccentSpinBox {
+                                                            from: 1
+                                                            to: 12
+                                                            value: backendRef ? backendRef.retention_months : 3
+                                                            enabled: !!backendRef && backendRef.google_oauth_ready
+                                                            onValueModified: if (backendRef) backendRef.set_retention_months(value)
+                                                        }
+
+                                                        Label {
+                                                            text: "months"
+                                                            color: textMuted
+                                                        }
+                                                    }
+
+                                                    Label {
+                                                        Layout.fillWidth: true
+                                                        wrapMode: Text.WordWrap
+                                                        color: textPrimary
+                                                        text: backendRef && backendRef.google_oauth_ready
+                                                            ? (backendRef.google_auth_connected
+                                                                ? "Google Drive is connected for this app."
+                                                                : "Connect in your browser to grant Google Drive access.")
+                                                            : "Google Drive sign-in is disabled until google.json is added beside the app."
+                                                    }
+
+                                                    Label {
+                                                        Layout.fillWidth: true
+                                                        wrapMode: Text.WordWrap
+                                                        color: textMuted
+                                                        text: "The app opens your browser for Google sign-in, stores the refresh token locally, and mirrors zen-sessions-backup into Google Drive under Backup/Zen."
+                                                    }
+
+                                                    ColumnLayout {
+                                                        Layout.fillWidth: true
+                                                        spacing: 8
+                                                        visible: backendRef && backendRef.cloud_sync_in_progress
+
+                                                        Rectangle {
+                                                            id: syncProgressTrack
+                                                            Layout.fillWidth: true
+                                                            implicitHeight: 12
+                                                            radius: 6
+                                                            color: "#2b3137"
+                                                            border.width: 1
+                                                            border.color: "#31546c"
+                                                            clip: true
+
+                                                            property bool determinate: backendRef && backendRef.cloud_sync_progress_total > 1
+                                                            property real progressRatio: {
+                                                                if (!backendRef || backendRef.cloud_sync_progress_total <= 0)
+                                                                    return 0
+                                                                return Math.max(0, Math.min(1, backendRef.cloud_sync_progress_current / backendRef.cloud_sync_progress_total))
+                                                            }
+
+                                                            Rectangle {
+                                                                id: syncProgressFill
+                                                                visible: syncProgressTrack.determinate
+                                                                anchors.left: parent.left
+                                                                anchors.top: parent.top
+                                                                anchors.bottom: parent.bottom
+                                                                width: Math.max(18, syncProgressTrack.width * syncProgressTrack.progressRatio)
+                                                                radius: 6
+                                                                gradient: Gradient {
+                                                                    orientation: Gradient.Horizontal
+                                                                    GradientStop { position: 0.0; color: "#2d9ddb" }
+                                                                    GradientStop { position: 0.55; color: "#45b4f3" }
+                                                                    GradientStop { position: 1.0; color: "#82d7ff" }
+                                                                }
+
+                                                                Behavior on width {
+                                                                    NumberAnimation {
+                                                                        duration: 260
+                                                                        easing.type: Easing.OutCubic
+                                                                    }
+                                                                }
+
+                                                                Rectangle {
+                                                                    id: syncProgressShimmer
+                                                                    visible: syncProgressFill.visible
+                                                                    width: Math.max(36, syncProgressFill.width * 0.32)
+                                                                    anchors.top: parent.top
+                                                                    anchors.bottom: parent.bottom
+                                                                    radius: 6
+                                                                    color: "#66ffffff"
+                                                                    opacity: 0.22
+                                                                    x: -width
+
+                                                                    SequentialAnimation on x {
+                                                                        running: syncProgressShimmer.visible
+                                                                        loops: Animation.Infinite
+                                                                        NumberAnimation {
+                                                                            from: -syncProgressShimmer.width
+                                                                            to: syncProgressFill.width
+                                                                            duration: 1150
+                                                                            easing.type: Easing.InOutQuad
+                                                                        }
+                                                                        PauseAnimation { duration: 220 }
+                                                                    }
+                                                                }
+                                                            }
+
+                                                            Rectangle {
+                                                                id: syncProgressIndeterminate
+                                                                visible: !syncProgressTrack.determinate
+                                                                width: Math.max(84, syncProgressTrack.width * 0.22)
+                                                                anchors.top: parent.top
+                                                                anchors.bottom: parent.bottom
+                                                                radius: 6
+                                                                gradient: Gradient {
+                                                                    orientation: Gradient.Horizontal
+                                                                    GradientStop { position: 0.0; color: "#1f8fcb" }
+                                                                    GradientStop { position: 0.5; color: "#5dc7ff" }
+                                                                    GradientStop { position: 1.0; color: "#1f8fcb" }
+                                                                }
+                                                                x: -width
+
+                                                                SequentialAnimation on x {
+                                                                    running: syncProgressIndeterminate.visible
+                                                                    loops: Animation.Infinite
+                                                                    NumberAnimation {
+                                                                        from: -syncProgressIndeterminate.width
+                                                                        to: syncProgressTrack.width
+                                                                        duration: 980
+                                                                        easing.type: Easing.InOutQuad
+                                                                    }
+                                                                    PauseAnimation { duration: 90 }
+                                                                }
+                                                            }
+                                                        }
+
+                                                        Label {
+                                                            Layout.alignment: Qt.AlignRight
+                                                            visible: backendRef && backendRef.cloud_sync_progress_total > 1
+                                                            color: textMuted
+                                                            font.pixelSize: window.kdeTinyFontPx
+                                                            text: backendRef
+                                                                ? Math.round(Math.max(0, Math.min(1, backendRef.cloud_sync_progress_current / Math.max(1, backendRef.cloud_sync_progress_total))) * 100) + "%"
+                                                                : ""
+                                                        }
+
+                                                        Label {
+                                                            Layout.fillWidth: true
+                                                            wrapMode: Text.WordWrap
+                                                            color: textPrimary
+                                                            text: backendRef && backendRef.cloud_sync_progress_text.length > 0
+                                                                ? backendRef.cloud_sync_progress_text
+                                                                : "Syncing backups with Google Drive..."
+                                                        }
+                                                    }
+                                                }
+                                            }
+
+                                            Item {
+                                                Layout.fillHeight: true
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        Rectangle {
+                            id: footerDivider
+                            Layout.fillWidth: true
+                            implicitHeight: 24
+                            color: titlebarBackground
+
+                            Rectangle {
+                                anchors.top: parent.top
+                                anchors.left: parent.left
+                                anchors.right: parent.right
+                                height: 1
+                                color: frameColor
+                            }
+
+                            RowLayout {
+                                anchors.fill: parent
+                                anchors.leftMargin: 14
+                                anchors.rightMargin: 14
+                                spacing: 14
+
+                                RowLayout {
+                                    spacing: 8
+
+                                    Label {
+                                        text: "PROFILE:"
+                                        color: textFaint
+                                        font.pixelSize: 10
+                                        font.weight: Font.DemiBold
+                                        font.letterSpacing: 0.9
+                                    }
+
+                                    Label {
+                                        text: backendRef && backendRef.profile_path.length > 0 ? backendRef.profile_path.toUpperCase() : "NO ZEN PROFILE LOADED"
+                                        color: textMuted
+                                        font.pixelSize: 10
+                                        font.weight: Font.DemiBold
+                                        elide: Text.ElideMiddle
+                                        Layout.preferredWidth: Math.max(260, window.width * 0.38)
+                                    }
+                                }
 
                                 Item {
-                                    Layout.fillHeight: true
+                                    Layout.fillWidth: true
+                                }
+
+                                Label {
+                                    text: activeBackup.fileName ? (activeBackup.totalTabs || 0) + " TABS LOADED" : backupsModel.length + " SNAPSHOTS FOUND"
+                                    color: textMuted
+                                    font.pixelSize: 10
+                                    font.weight: Font.DemiBold
+                                    font.letterSpacing: 0.9
+                                }
+
+                                Label {
+                                    text: syncFooterLabel()
+                                    color: syncFooterColor()
+                                    font.pixelSize: 10
+                                    font.weight: Font.DemiBold
+                                    font.letterSpacing: 0.9
                                 }
                             }
                         }
                     }
                 }
             }
+        }
+    }
+
+    Menu {
+        id: restoreMoreMenu
+
+        Action {
+            text: "Restore Full Backup"
+            enabled: !!backendRef && !!activeBackup.fileName
+            onTriggered: fullRestoreDialog.open()
+        }
+
+        Action {
+            text: "Launch Zen After Restore"
+            checkable: true
+            checked: backendRef ? backendRef.launch_after_restore : false
+            enabled: !!backendRef
+            onTriggered: if (backendRef) backendRef.set_launch_after_restore(checked)
         }
     }
 

@@ -4,9 +4,10 @@ use std::{
     fs,
     path::{Path, PathBuf},
     rc::Rc,
+    thread,
 };
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use cpp::cpp;
 use qmetaobject::*;
 use serde::{Deserialize, Serialize};
@@ -37,6 +38,23 @@ struct GuiState {
     cloud_sync_progress_text: String,
     google_refresh_token: String,
     retention_months: u8,
+}
+
+#[derive(Debug)]
+struct SyncUiSuccess {
+    backup_dir: PathBuf,
+    summary: google_drive::GoogleDriveSyncSummary,
+    retention_months: u8,
+}
+
+#[derive(Debug)]
+enum SyncUiEvent {
+    Progress {
+        current: i32,
+        total: i32,
+        message: String,
+    },
+    Finished(Result<SyncUiSuccess, String>),
 }
 
 #[derive(Clone)]
@@ -366,13 +384,74 @@ impl AppBridge {
     }
 
     fn do_sync_cloud_backup(&mut self) {
-        match self.sync_cloud_backup_inner() {
-            Ok(()) => {}
+        let (backup_dir, settings) = match self.cloud_sync_context() {
+            Ok(context) => context,
             Err(error) => {
                 self.set_cloud_sync_progress(false, 0, 1, "");
                 self.set_status(format!("Cloud sync failed: {error}"));
+                return;
             }
-        }
+        };
+
+        self.set_cloud_sync_progress(true, 0, 1, "Preparing Google Drive sync");
+        self.set_status("Syncing backups with Google Drive...");
+
+        let qptr = QPointer::from(&*self);
+        let dispatch = queued_callback(move |event: SyncUiEvent| {
+            qptr.as_pinned().map(|bridge| {
+                let mut bridge = bridge.borrow_mut();
+                match event {
+                    SyncUiEvent::Progress {
+                        current,
+                        total,
+                        message,
+                    } => {
+                        bridge.set_cloud_sync_progress(true, current, total, message);
+                    }
+                    SyncUiEvent::Finished(result) => match result {
+                        Ok(success) => {
+                            bridge.do_refresh();
+                            let message = format!(
+                                "Synced {} to Google Drive Backup/Zen. Uploaded {}, removed {} remote file(s), pruned {} local file(s) older than {} month(s).",
+                                success.backup_dir.display(),
+                                success.summary.uploaded_files,
+                                success.summary.deleted_remote_files,
+                                success.summary.pruned_local_files,
+                                success.retention_months
+                            );
+
+                            bridge.state.borrow_mut().cloud_sync_status = message.clone();
+                            bridge.cloud_sync_status_text = QString::from(message.as_str());
+                            bridge.cloud_sync_status_text_changed();
+                            bridge.set_cloud_sync_progress(false, 0, 1, "");
+                            bridge.set_status(message);
+                        }
+                        Err(error) => {
+                            bridge.set_cloud_sync_progress(false, 0, 1, "");
+                            bridge.set_status(format!("Cloud sync failed: {error}"));
+                        }
+                    },
+                }
+            });
+        });
+
+        thread::spawn(move || {
+            let sync_result = google_drive::sync_backup_folder(&backup_dir, &settings, |progress| {
+                dispatch(SyncUiEvent::Progress {
+                    current: progress.current_step as i32,
+                    total: progress.total_steps as i32,
+                    message: progress.message,
+                });
+            })
+            .map(|summary| SyncUiSuccess {
+                backup_dir,
+                summary,
+                retention_months: settings.retention_months,
+            })
+            .map_err(|error| error.to_string());
+
+            dispatch(SyncUiEvent::Finished(sync_result));
+        });
     }
 
     fn set_cloud_sync_progress(
@@ -400,7 +479,7 @@ impl AppBridge {
         self.cloud_sync_progress_changed();
     }
 
-    fn sync_cloud_backup_inner(&mut self) -> Result<()> {
+    fn cloud_sync_context(&self) -> Result<(PathBuf, GoogleDriveSyncSettings)> {
         let profile = self
             .state
             .borrow()
@@ -421,44 +500,19 @@ impl AppBridge {
         };
         let (enabled, settings) = settings;
 
+        if self.state.borrow().cloud_sync_in_progress {
+            bail!("cloud sync is already in progress");
+        }
+
         if !enabled {
-            self.set_status("Cloud sync is disabled. Enable it before starting a sync.");
-            return Ok(());
+            bail!("cloud sync is disabled. Enable it before starting a sync");
         }
 
         if !backup_dir.is_dir() {
-            self.set_status(format!(
-                "The backup folder {} does not exist yet.",
-                backup_dir.display()
-            ));
-            return Ok(());
+            bail!("the backup folder {} does not exist yet", backup_dir.display());
         }
 
-        self.set_cloud_sync_progress(true, 0, 1, "Preparing Google Drive sync");
-        let summary = google_drive::sync_backup_folder(&backup_dir, &settings, |progress| {
-            self.set_cloud_sync_progress(
-                true,
-                progress.current_step as i32,
-                progress.total_steps as i32,
-                progress.message,
-            );
-        })?;
-        self.do_refresh();
-        let message = format!(
-            "Synced {} to Google Drive Backup/Zen. Uploaded {}, removed {} remote file(s), pruned {} local file(s) older than {} month(s).",
-            backup_dir.display(),
-            summary.uploaded_files,
-            summary.deleted_remote_files,
-            summary.pruned_local_files,
-            settings.retention_months
-        );
-
-        self.state.borrow_mut().cloud_sync_status = message.clone();
-        self.cloud_sync_status_text = QString::from(message.as_str());
-        self.cloud_sync_status_text_changed();
-        self.set_cloud_sync_progress(false, 0, 1, "");
-        self.set_status(message);
-        Ok(())
+        Ok((backup_dir, settings))
     }
 
     fn do_set_profile_path(&mut self, profile_path: QString) {
