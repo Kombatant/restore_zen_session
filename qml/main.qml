@@ -11,7 +11,7 @@ ApplicationWindow {
     minimumHeight: 760
     visible: true
     title: "Zen Session Restore"
-    color: "#050916"
+    color: outerBackground
     flags: Qt.Window | Qt.FramelessWindowHint
 
     property var backupsModel: []
@@ -29,32 +29,50 @@ ApplicationWindow {
     property int kdeSectionFontPx: kdeBaseFontPx + 4
     property int kdeTitleFontPx: kdeBaseFontPx + 11
 
-    property color outerBackground: "#0f1216"
-    property color shellBackground: "#232629"
-    property color titlebarBackground: "#1b1e20"
-    property color sidebarBackground: "#2a2e32"
-    property color surfaceBackground: "#262b2f"
-    property color cardBackground: "#2d3237"
-    property color subtleCardBackground: "#31363b"
-    property color rowBackground: "#2b3035"
-    property color hoverBackground: "#343a40"
-    property color frameColor: "#4d5053"
-    property color textPrimary: "#e8edf2"
-    property color textMuted: "#a0abb5"
-    property color textFaint: "#6f7a84"
-    property color accentBlue: "#3daee9"
-    property color accentBlueSoft: "#173648"
-    property color accentBlueFaint: "#112734"
-    property color accentBlueBorder: "#5bc1f3"
-    property color warningFill: "#4a3315"
-    property color warningBorder: "#bf8a32"
-    property color warningText: "#f4c96d"
-    property color criticalFill: "#4a2529"
-    property color criticalBorder: "#d16a73"
-    property color criticalText: "#f2a5ae"
-    property color successFill: "#153328"
-    property color successBorder: "#4a9b7a"
-    property color successText: "#8fe0bd"
+    readonly property bool darkTheme: (palette.window.r * 0.299 + palette.window.g * 0.587 + palette.window.b * 0.114) < 0.5
+    readonly property color textOnAccent: palette.highlightedText
+    readonly property color warningBase: Qt.rgba(0.82, 0.58, 0.22, 1.0)
+    readonly property color criticalBase: Qt.rgba(0.80, 0.34, 0.39, 1.0)
+    readonly property color successBase: Qt.rgba(0.24, 0.66, 0.48, 1.0)
+
+    property color outerBackground: palette.window
+    property color shellBackground: blend(palette.window, palette.base, darkTheme ? 0.22 : 0.06)
+    property color titlebarBackground: blend(palette.window, palette.button, darkTheme ? 0.28 : 0.08)
+    property color sidebarBackground: blend(shellBackground, palette.base, darkTheme ? 0.22 : 0.05)
+    property color surfaceBackground: palette.base
+    property color cardBackground: blend(palette.base, palette.button, darkTheme ? 0.18 : 0.04)
+    property color subtleCardBackground: blend(palette.alternateBase, palette.window, darkTheme ? 0.08 : 0.03)
+    property color rowBackground: blend(subtleCardBackground, palette.windowText, darkTheme ? 0.05 : 0.02)
+    property color hoverBackground: blend(cardBackground, accentBlue, darkTheme ? 0.14 : 0.08)
+    property color frameColor: blend(palette.mid, palette.windowText, darkTheme ? 0.08 : 0.04)
+    property color textPrimary: palette.windowText
+    property color textMuted: blend(textPrimary, outerBackground, darkTheme ? 0.36 : 0.5)
+    property color textFaint: blend(textPrimary, outerBackground, darkTheme ? 0.58 : 0.7)
+    property color accentBlue: palette.highlight
+    property color accentBlueSoft: blend(surfaceBackground, accentBlue, darkTheme ? 0.25 : 0.12)
+    property color accentBlueFaint: blend(surfaceBackground, accentBlue, darkTheme ? 0.14 : 0.07)
+    property color accentBlueBorder: blend(accentBlue, textPrimary, darkTheme ? 0.14 : 0.08)
+    property color warningFill: blend(surfaceBackground, warningBase, darkTheme ? 0.22 : 0.12)
+    property color warningBorder: blend(warningBase, textPrimary, darkTheme ? 0.12 : 0.06)
+    property color warningText: blend(warningBase, textPrimary, darkTheme ? 0.32 : 0.18)
+    property color criticalFill: blend(surfaceBackground, criticalBase, darkTheme ? 0.2 : 0.11)
+    property color criticalBorder: blend(criticalBase, textPrimary, darkTheme ? 0.12 : 0.06)
+    property color criticalText: blend(criticalBase, textPrimary, darkTheme ? 0.3 : 0.16)
+    property color successText: blend(successBase, textPrimary, darkTheme ? 0.32 : 0.18)
+
+    function blend(baseColor, mixColor, amount) {
+        const clampedAmount = Math.max(0, Math.min(1, amount))
+        return Qt.rgba(
+            baseColor.r + (mixColor.r - baseColor.r) * clampedAmount,
+            baseColor.g + (mixColor.g - baseColor.g) * clampedAmount,
+            baseColor.b + (mixColor.b - baseColor.b) * clampedAmount,
+            baseColor.a + (mixColor.a - baseColor.a) * clampedAmount
+        )
+    }
+
+    function withAlpha(sourceColor, alphaValue) {
+        return Qt.rgba(sourceColor.r, sourceColor.g, sourceColor.b, alphaValue)
+    }
 
     function parseBackups() {
         if (!backendRef) {
@@ -140,7 +158,7 @@ ApplicationWindow {
             return warningText
         if (!backendRef.google_auth_connected)
             return criticalText
-        return accentBlue
+        return successText
     }
 
     function hasMultipleCollections() {
@@ -172,47 +190,23 @@ ApplicationWindow {
     }
 
     function tabAccentColor(tab) {
-        const key = (((tab && tab.url) ? tab.url : "") + " " + ((tab && tab.title) ? tab.title : "")).toLowerCase()
-
-        if (key.indexOf("weather") !== -1)
-            return "#2387d3"
-        if (key.indexOf("outlook") !== -1 || key.indexOf("mail") !== -1 || key.indexOf("inbox") !== -1)
-            return "#2c76f0"
-        if (key.indexOf("github") !== -1)
-            return "#6c7580"
-        if (key.indexOf("google") !== -1)
-            return "#5d6772"
-        if (key.indexOf("docker") !== -1)
-            return "#3976c5"
-        if (key.indexOf("terminal") !== -1 || key.indexOf("shell") !== -1)
-            return "#6c7580"
+        if (tab && !tab.restorable)
+            return criticalText
         if (tab && tab.essential)
-            return "#c08b31"
+            return warningText
         if (tab && tab.pinned)
             return accentBlue
-        return "#56606b"
+        return textMuted
     }
 
     function tabAccentFillColor(tab) {
-        const key = (((tab && tab.url) ? tab.url : "") + " " + ((tab && tab.title) ? tab.title : "")).toLowerCase()
-
-        if (key.indexOf("weather") !== -1)
-            return "#18364b"
-        if (key.indexOf("outlook") !== -1 || key.indexOf("mail") !== -1 || key.indexOf("inbox") !== -1)
-            return "#19365a"
-        if (key.indexOf("github") !== -1)
-            return "#30353b"
-        if (key.indexOf("google") !== -1)
-            return "#303741"
-        if (key.indexOf("docker") !== -1)
-            return "#1b3552"
-        if (key.indexOf("terminal") !== -1 || key.indexOf("shell") !== -1)
-            return "#30353b"
+        if (tab && !tab.restorable)
+            return criticalFill
         if (tab && tab.essential)
-            return "#4b3615"
+            return warningFill
         if (tab && tab.pinned)
-            return "#1c4761"
-        return "#31363b"
+            return accentBlueFaint
+        return rowBackground
     }
 
     function tabMonogram(tab) {
@@ -265,8 +259,8 @@ ApplicationWindow {
                 if (!control.enabled)
                     return "transparent"
                 if (control.danger)
-                    return control.down ? "#6b2d34" : (control.hovered ? "#59292e" : "transparent")
-                return control.down ? "#3b4046" : (control.hovered ? "#32373c" : "transparent")
+                    return control.down ? blend(criticalFill, criticalText, 0.2) : (control.hovered ? criticalFill : "transparent")
+                return control.down ? blend(titlebarBackground, textPrimary, 0.1) : (control.hovered ? hoverBackground : "transparent")
             }
             border.width: control.hovered ? 1 : 0
             border.color: control.danger ? criticalBorder : frameColor
@@ -299,10 +293,10 @@ ApplicationWindow {
             opacity: control.enabled ? 1.0 : 0.5
             color: {
                 if (control.primary)
-                    return control.down ? "#3297cb" : accentBlue
+                    return control.down ? blend(accentBlue, textPrimary, 0.14) : accentBlue
                 if (control.warning)
-                    return control.down ? "#59401a" : "#40311a"
-                return control.down ? "#363c42" : (control.hovered ? "#343a40" : "#2d3237")
+                    return control.down ? blend(warningFill, warningText, 0.14) : warningFill
+                return control.down ? blend(cardBackground, textPrimary, 0.08) : (control.hovered ? hoverBackground : cardBackground)
             }
             border.width: 1
             border.color: {
@@ -318,7 +312,7 @@ ApplicationWindow {
             text: control.text
             horizontalAlignment: Text.AlignHCenter
             verticalAlignment: Text.AlignVCenter
-            color: control.primary ? "#ffffff" : (control.warning ? warningText : textPrimary)
+            color: control.primary ? textOnAccent : (control.warning ? warningText : textPrimary)
             font.pixelSize: control.compact ? window.kdeSmallFontPx : window.kdeBodyFontPx
             font.weight: Font.Medium
         }
@@ -335,13 +329,13 @@ ApplicationWindow {
             radius: 3
             color: control.checked ? accentBlue : "transparent"
             border.width: 1
-            border.color: control.enabled ? (control.checked ? accentBlueBorder : "#7d8790") : frameColor
+            border.color: control.enabled ? (control.checked ? accentBlueBorder : blend(frameColor, textMuted, 0.35)) : frameColor
 
             Label {
                 anchors.centerIn: parent
                 visible: control.checked
                 text: "\u2713"
-                color: "#ffffff"
+                color: textOnAccent
                 font.pixelSize: 11
                 font.weight: Font.DemiBold
             }
@@ -380,7 +374,7 @@ ApplicationWindow {
             x: control.width - width - 1
             y: 1
             radius: 4
-            color: control.up.pressed ? "#363c42" : "transparent"
+            color: control.up.pressed ? hoverBackground : "transparent"
 
             Label {
                 anchors.centerIn: parent
@@ -397,7 +391,7 @@ ApplicationWindow {
             x: 1
             y: 1
             radius: 4
-            color: control.down.pressed ? "#363c42" : "transparent"
+            color: control.down.pressed ? hoverBackground : "transparent"
 
             Label {
                 anchors.centerIn: parent
@@ -478,7 +472,7 @@ ApplicationWindow {
                 implicitHeight: 40
                 color: titlebarBackground
                 border.width: 1
-                border.color: "#00000000"
+                border.color: "transparent"
 
                 MouseArea {
                     anchors.fill: parent
@@ -514,7 +508,7 @@ ApplicationWindow {
                                 anchors.right: parent.right
                                 anchors.bottom: parent.bottom
                                 text: "\u2726"
-                                color: "#8dd8ff"
+                                color: accentBlueBorder
                                 font.pixelSize: 8
                             }
                         }
@@ -596,7 +590,7 @@ ApplicationWindow {
                     Layout.fillHeight: true
                     color: sidebarBackground
                     border.width: 1
-                    border.color: "#00000000"
+                    border.color: "transparent"
 
                     Rectangle {
                         anchors.top: parent.top
@@ -653,9 +647,9 @@ ApplicationWindow {
                                 width: snapshotList.width - snapshotList.leftMargin - snapshotList.rightMargin
                                 height: 80
                                 radius: 4
-                                color: modelData.active ? "#2c3c47" : (snapshotHover.containsMouse ? subtleCardBackground : "transparent")
+                                color: modelData.active ? accentBlueSoft : (snapshotHover.containsMouse ? subtleCardBackground : "transparent")
                                 border.width: 1
-                                border.color: modelData.active ? "#2b81ad" : "transparent"
+                                border.color: modelData.active ? accentBlueBorder : "transparent"
 
                                 MouseArea {
                                     id: snapshotHover
@@ -682,7 +676,7 @@ ApplicationWindow {
                                         Layout.fillWidth: true
                                         text: (snapshotCard.modelData.collections + " spaces \u2022 " + snapshotCard.modelData.tabs + " tabs").toUpperCase()
                                         elide: Text.ElideRight
-                                        color: snapshotCard.modelData.active ? "#86d3fa" : textFaint
+                                        color: snapshotCard.modelData.active ? accentBlueBorder : textFaint
                                         font.pixelSize: window.kdeTinyFontPx
                                         font.weight: Font.DemiBold
                                         font.letterSpacing: 0.7
@@ -707,8 +701,8 @@ ApplicationWindow {
 
                         gradient: Gradient {
                             orientation: Gradient.Horizontal
-                            GradientStop { position: 0.0; color: "#003daee9" }
-                            GradientStop { position: 1.0; color: "#353daee9" }
+                            GradientStop { position: 0.0; color: withAlpha(accentBlue, 0.0) }
+                            GradientStop { position: 1.0; color: withAlpha(accentBlue, darkTheme ? 0.2 : 0.12) }
                         }
                     }
 
@@ -732,6 +726,7 @@ ApplicationWindow {
                             }
 
                             ActionButton {
+                                id: restoreSelectedButton
                                 anchors.right: parent.right
                                 anchors.top: parent.top
                                 anchors.rightMargin: 28
@@ -857,6 +852,7 @@ ApplicationWindow {
 
                                         ActionButton {
                                             compact: true
+                                            Layout.preferredWidth: restoreSelectedButton.width
                                             text: "Select / Deselect All"
                                             primary: restorableTabsInBackup() > 0 && activeBackup.selectedTabs >= restorableTabsInBackup()
                                             enabled: !!backendRef && !!activeBackup.collections && activeBackup.collections.length > 0
@@ -978,9 +974,9 @@ ApplicationWindow {
                                                                     required property var modelData
                                                                     Layout.fillWidth: true
                                                                     radius: 4
-                                                                    color: modelData.selected ? "#2c353b" : "#2e3237"
+                                                                    color: modelData.selected ? accentBlueSoft : rowBackground
                                                                     border.width: 1
-                                                                    border.color: modelData.selected ? "#2b81ad" : "#55595d"
+                                                                    border.color: modelData.selected ? accentBlueBorder : frameColor
                                                                     implicitHeight: tabRowLayout.implicitHeight + 18
 
                                                                     RowLayout {
@@ -1001,13 +997,13 @@ ApplicationWindow {
                                                                             width: 38
                                                                             height: 38
                                                                             radius: 4
-                                                                            color: "#243551"
+                                                                            color: window.tabAccentFillColor(modelData)
                                                                             border.width: 0
 
                                                                             Label {
                                                                                 anchors.centerIn: parent
                                                                                 text: window.tabGlyph(modelData)
-                                                                                color: modelData.selected ? accentBlue : "#a9b4c2"
+                                                                                color: modelData.selected ? accentBlue : window.tabAccentColor(modelData)
                                                                                 font.pixelSize: window.tabGlyph(modelData) === "<>" ? 13 : 16
                                                                                 font.weight: Font.DemiBold
                                                                             }
@@ -1035,15 +1031,15 @@ ApplicationWindow {
                                                                                 MetaChip {
                                                                                     visible: !!modelData.pinned
                                                                                     label: "Pinned"
-                                                                                    fillColor: "#374052"
+                                                                                    fillColor: accentBlueFaint
                                                                                     strokeColor: "transparent"
-                                                                                    labelColor: modelData.selected ? "#56c2f7" : "#a8b2c1"
+                                                                                    labelColor: modelData.selected ? accentBlue : textMuted
                                                                                 }
 
                                                                                 MetaChip {
                                                                                     visible: !!modelData.essential
                                                                                     label: "Essential"
-                                                                                    fillColor: "#3f341b"
+                                                                                    fillColor: warningFill
                                                                                     strokeColor: warningBorder
                                                                                     labelColor: warningText
                                                                                 }
@@ -1051,7 +1047,7 @@ ApplicationWindow {
                                                                                 MetaChip {
                                                                                     visible: !modelData.restorable
                                                                                     label: "Unsupported"
-                                                                                    fillColor: "#432326"
+                                                                                    fillColor: criticalFill
                                                                                     strokeColor: criticalBorder
                                                                                     labelColor: criticalText
                                                                                 }
@@ -1062,7 +1058,7 @@ ApplicationWindow {
                                                                                 text: modelData.url ? modelData.url : "Unsupported or missing URL"
                                                                                 elide: Text.ElideRight
                                                                                 maximumLineCount: 1
-                                                                                color: modelData.selected ? "#44b8ee" : "#8c949d"
+                                                                                color: modelData.selected ? accentBlue : textMuted
                                                                                 font.pixelSize: window.kdeBodyFontPx
                                                                             }
                                                                         }
@@ -1277,9 +1273,9 @@ ApplicationWindow {
                                                             Layout.fillWidth: true
                                                             implicitHeight: 12
                                                             radius: 6
-                                                            color: "#2b3137"
+                                                            color: rowBackground
                                                             border.width: 1
-                                                            border.color: "#31546c"
+                                                            border.color: accentBlueFaint
                                                             clip: true
 
                                                             property bool determinate: backendRef && backendRef.cloud_sync_progress_total > 1
@@ -1299,9 +1295,9 @@ ApplicationWindow {
                                                                 radius: 6
                                                                 gradient: Gradient {
                                                                     orientation: Gradient.Horizontal
-                                                                    GradientStop { position: 0.0; color: "#2d9ddb" }
-                                                                    GradientStop { position: 0.55; color: "#45b4f3" }
-                                                                    GradientStop { position: 1.0; color: "#82d7ff" }
+                                                                    GradientStop { position: 0.0; color: blend(accentBlue, textPrimary, 0.05) }
+                                                                    GradientStop { position: 0.55; color: accentBlue }
+                                                                    GradientStop { position: 1.0; color: accentBlueBorder }
                                                                 }
 
                                                                 Behavior on width {
@@ -1318,7 +1314,7 @@ ApplicationWindow {
                                                                     anchors.top: parent.top
                                                                     anchors.bottom: parent.bottom
                                                                     radius: 6
-                                                                    color: "#66ffffff"
+                                                                    color: withAlpha(textOnAccent, 0.4)
                                                                     opacity: 0.22
                                                                     x: -width
 
@@ -1345,9 +1341,9 @@ ApplicationWindow {
                                                                 radius: 6
                                                                 gradient: Gradient {
                                                                     orientation: Gradient.Horizontal
-                                                                    GradientStop { position: 0.0; color: "#1f8fcb" }
-                                                                    GradientStop { position: 0.5; color: "#5dc7ff" }
-                                                                    GradientStop { position: 1.0; color: "#1f8fcb" }
+                                                                    GradientStop { position: 0.0; color: blend(accentBlue, surfaceBackground, 0.12) }
+                                                                    GradientStop { position: 0.5; color: accentBlueBorder }
+                                                                    GradientStop { position: 1.0; color: blend(accentBlue, surfaceBackground, 0.12) }
                                                                 }
                                                                 x: -width
 
@@ -1499,7 +1495,7 @@ ApplicationWindow {
             }
 
             Label {
-                text: "Version 0.4"
+                text: "Version 0.5.0"
                 color: palette.windowText
             }
 
