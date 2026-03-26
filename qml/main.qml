@@ -34,6 +34,8 @@ ApplicationWindow {
     readonly property color warningBase: Qt.rgba(0.82, 0.58, 0.22, 1.0)
     readonly property color criticalBase: Qt.rgba(0.80, 0.34, 0.39, 1.0)
     readonly property color successBase: Qt.rgba(0.24, 0.66, 0.48, 1.0)
+    readonly property color syncConnectedDot: "#2ecc71"
+    readonly property color syncDisconnectedDot: "#e74c3c"
 
     property color outerBackground: palette.window
     property color shellBackground: blend(palette.window, palette.base, darkTheme ? 0.22 : 0.06)
@@ -143,22 +145,22 @@ ApplicationWindow {
 
     function syncFooterLabel() {
         if (!backendRef)
-            return "\u25cf GOOGLE SYNC UNAVAILABLE"
+            return "GOOGLE SYNC UNAVAILABLE"
         if (!backendRef.google_oauth_ready)
-            return "\u25cf GOOGLE SYNC NOT CONFIGURED"
+            return "GOOGLE SYNC NOT CONFIGURED"
         if (!backendRef.google_auth_connected)
-            return "\u25cf GOOGLE SYNC DISCONNECTED"
-        return "\u25cf CONNECTED TO GOOGLE SYNC"
+            return "GOOGLE SYNC DISCONNECTED"
+        return "CONNECTED TO GOOGLE SYNC"
+    }
+
+    function syncFooterDotColor() {
+        if (backendRef && backendRef.google_oauth_ready && backendRef.google_auth_connected)
+            return syncConnectedDot
+        return syncDisconnectedDot
     }
 
     function syncFooterColor() {
-        if (!backendRef)
-            return textFaint
-        if (!backendRef.google_oauth_ready)
-            return warningText
-        if (!backendRef.google_auth_connected)
-            return criticalText
-        return successText
+        return textMuted
     }
 
     function hasMultipleCollections() {
@@ -1455,12 +1457,24 @@ ApplicationWindow {
                                     font.letterSpacing: 0.9
                                 }
 
-                                Label {
-                                    text: syncFooterLabel()
-                                    color: syncFooterColor()
-                                    font.pixelSize: 10
-                                    font.weight: Font.DemiBold
-                                    font.letterSpacing: 0.9
+                                RowLayout {
+                                    spacing: 6
+
+                                    Label {
+                                        text: "\u25cf"
+                                        color: syncFooterDotColor()
+                                        font.pixelSize: 10
+                                        font.weight: Font.DemiBold
+                                        font.letterSpacing: 0.9
+                                    }
+
+                                    Label {
+                                        text: syncFooterLabel()
+                                        color: syncFooterColor()
+                                        font.pixelSize: 10
+                                        font.weight: Font.DemiBold
+                                        font.letterSpacing: 0.9
+                                    }
                                 }
                             }
                         }
