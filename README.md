@@ -1,4 +1,4 @@
-# Zen Session Restore
+# Restore Zen Session
 
 > [!IMPORTANT]  
 > Used various LLMs as a playground for code generation and assistance in forking/structuring/coding the project.

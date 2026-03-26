@@ -10,7 +10,7 @@ ApplicationWindow {
     minimumWidth: 1180
     minimumHeight: 760
     visible: true
-    title: "Zen Session Restore"
+    title: "Restore Zen Session"
     color: outerBackground
     flags: Qt.Window | Qt.FramelessWindowHint
 
@@ -514,7 +514,7 @@ ApplicationWindow {
                         }
 
                         Label {
-                            text: "Zen Session Restore"
+                            text: "Restore Zen Session"
                             color: textPrimary
                             font.pixelSize: window.kdeSmallFontPx
                             font.weight: Font.Medium
@@ -531,12 +531,16 @@ ApplicationWindow {
                         ChromeButton {
                             text: "\u21bb"
                             enabled: !!backendRef
+                            ToolTip.visible: hovered
+                            ToolTip.text: "Refresh"
                             onClicked: if (backendRef) backendRef.refresh()
                         }
 
                         ChromeButton {
                             text: "🗀"
                             enabled: !!backendRef
+                            ToolTip.visible: hovered
+                            ToolTip.text: "Select the Zen profile folder"
                             onClicked: profileFolderDialog.open()
                         }
                     }
@@ -719,7 +723,7 @@ ApplicationWindow {
                                 anchors.top: parent.top
                                 anchors.leftMargin: 24
                                 anchors.topMargin: 20
-                                text: "Zen Session Restore"
+                                text: "Restore Zen Session"
                                 color: textPrimary
                                 font.pixelSize: window.kdeTitleFontPx
                                 font.weight: Font.Normal
@@ -835,6 +839,7 @@ ApplicationWindow {
                                         spacing: 10
 
                                         Label {
+                                            Layout.alignment: Qt.AlignBottom
                                             text: "Spaces"
                                             color: textPrimary
                                             font.pixelSize: window.kdeSectionFontPx
@@ -842,6 +847,7 @@ ApplicationWindow {
                                         }
 
                                         Label {
+                                            Layout.alignment: Qt.AlignBottom
                                             Layout.fillWidth: true
                                             text: activeBackup.collections
                                                 ? activeBackup.collections.length + " spaces \u2022 " + (activeBackup.totalTabs || 0) + " tabs \u2022 " + (activeBackup.selectedTabs || 0) + " selected"
@@ -853,6 +859,7 @@ ApplicationWindow {
                                         ActionButton {
                                             id: selectAllButton
                                             compact: true
+                                            Layout.alignment: Qt.AlignBottom
                                             Layout.minimumWidth: restoreSelectedButton.implicitWidth
                                             Layout.preferredWidth: restoreSelectedButton.implicitWidth
                                             Layout.maximumWidth: restoreSelectedButton.implicitWidth
