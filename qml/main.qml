@@ -617,7 +617,7 @@ ApplicationWindow {
                                     text: "SNAPSHOT SESSIONS"
                                     color: textFaint
                                     font.pixelSize: window.kdeSmallFontPx
-                                    font.weight: Font.DemiBold
+                                    font.weight: Font.ExtraBold
                                     font.letterSpacing: 1.3
                                 }
 
@@ -851,8 +851,11 @@ ApplicationWindow {
                                         }
 
                                         ActionButton {
+                                            id: selectAllButton
                                             compact: true
-                                            Layout.preferredWidth: restoreSelectedButton.width
+                                            Layout.minimumWidth: restoreSelectedButton.implicitWidth
+                                            Layout.preferredWidth: restoreSelectedButton.implicitWidth
+                                            Layout.maximumWidth: restoreSelectedButton.implicitWidth
                                             text: "Select / Deselect All"
                                             primary: restorableTabsInBackup() > 0 && activeBackup.selectedTabs >= restorableTabsInBackup()
                                             enabled: !!backendRef && !!activeBackup.collections && activeBackup.collections.length > 0

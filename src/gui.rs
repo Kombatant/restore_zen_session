@@ -982,7 +982,7 @@ fn cloud_sync_status_summary(
     }
 
     format!(
-        "Google Drive will mirror {} into Backup/Zen and prune local backups older than {} month(s).",
+        "Google Drive will mirror {} into Backup/Zen and prune backups older than {} month(s).",
         zen::profile_backup_dir(profile).display(),
         retention_months
     )
