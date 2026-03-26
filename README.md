@@ -1,5 +1,8 @@
 # Zen Session Restore
 
+> [!IMPORTANT]  
+> Used various LLMs as a playground for code generation and assistance in forking/structuring/coding the project.
+
 `zen-session-restore` is a native Rust utility for inspecting and restoring Zen Browser session backups from a local profile.
 
 It reads Zen backup snapshots from `zen-sessions-backup`, decodes Mozilla `.jsonlz4` session files, shows the contents as spaces or browser windows, and writes a chosen snapshot back to the live `zen-sessions.jsonlz4` session file. The application provides both a desktop GUI and a CLI.
