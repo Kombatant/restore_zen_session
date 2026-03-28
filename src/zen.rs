@@ -1,7 +1,6 @@
 use std::{
     collections::{BTreeSet, HashMap, HashSet},
-    fmt,
-    fs,
+    fmt, fs,
     path::{Path, PathBuf},
     process::Command,
 };
@@ -117,7 +116,11 @@ pub fn is_profile_in_use(profile_dir: &Path) -> bool {
     system.refresh_processes(ProcessesToUpdate::All, true);
 
     active_profile_lock_pid(profile_dir)
-        .and_then(|pid| system.process(Pid::from_u32(pid)).filter(|process| process_looks_like_zen(process)))
+        .and_then(|pid| {
+            system
+                .process(Pid::from_u32(pid))
+                .filter(|process| process_looks_like_zen(process))
+        })
         .is_some()
 }
 
@@ -326,7 +329,12 @@ fn filter_zen_session(backup: &BackupFile, selections: &[CollectionSelection]) -
             .summary
             .collections
             .get(selection.collection_index)
-            .ok_or_else(|| anyhow!("collection index {} is out of range", selection.collection_index))?;
+            .ok_or_else(|| {
+                anyhow!(
+                    "collection index {} is out of range",
+                    selection.collection_index
+                )
+            })?;
         selected_by_workspace.insert(
             collection.workspace_id.clone(),
             selection.selected_tab_indices.clone(),
@@ -340,7 +348,8 @@ fn filter_zen_session(backup: &BackupFile, selections: &[CollectionSelection]) -
     let filtered_spaces = original_spaces
         .into_iter()
         .filter(|space| {
-            space.get("uuid")
+            space
+                .get("uuid")
                 .and_then(Value::as_str)
                 .is_some_and(|uuid| selected_workspace_ids.contains(uuid))
         })
@@ -372,7 +381,10 @@ fn filter_zen_session(backup: &BackupFile, selections: &[CollectionSelection]) -
     Ok(json)
 }
 
-fn filter_firefox_session(backup: &BackupFile, selections: &[CollectionSelection]) -> Result<Value> {
+fn filter_firefox_session(
+    backup: &BackupFile,
+    selections: &[CollectionSelection],
+) -> Result<Value> {
     let mut json = backup.raw_json.clone();
     let windows = json
         .get_mut("windows")
@@ -381,7 +393,10 @@ fn filter_firefox_session(backup: &BackupFile, selections: &[CollectionSelection
 
     let mut selected_tabs_by_window: HashMap<usize, BTreeSet<usize>> = HashMap::new();
     for selection in selections {
-        selected_tabs_by_window.insert(selection.collection_index, selection.selected_tab_indices.clone());
+        selected_tabs_by_window.insert(
+            selection.collection_index,
+            selection.selected_tab_indices.clone(),
+        );
     }
 
     let original_windows = windows.clone();
@@ -445,7 +460,10 @@ fn summarize_session(json: &Value) -> Result<SessionSummary> {
             }
         }
 
-        let total_tabs = collections.iter().map(|collection| collection.tabs.len()).sum();
+        let total_tabs = collections
+            .iter()
+            .map(|collection| collection.tabs.len())
+            .sum();
 
         return Ok(SessionSummary {
             kind: SessionKind::ZenSpaces,
@@ -477,7 +495,10 @@ fn summarize_session(json: &Value) -> Result<SessionSummary> {
                 }
             })
             .collect::<Vec<_>>();
-        let total_tabs = collections.iter().map(|collection| collection.tabs.len()).sum();
+        let total_tabs = collections
+            .iter()
+            .map(|collection| collection.tabs.len())
+            .sum();
 
         return Ok(SessionSummary {
             kind: SessionKind::FirefoxWindows,
@@ -556,9 +577,18 @@ fn parse_snapshot_key(file_name: &str) -> (i32, i32, i32, i32) {
     };
 
     let mut parts = stem.split('-');
-    let year = parts.next().and_then(|value| value.parse().ok()).unwrap_or(0);
-    let month = parts.next().and_then(|value| value.parse().ok()).unwrap_or(0);
-    let day = parts.next().and_then(|value| value.parse().ok()).unwrap_or(0);
+    let year = parts
+        .next()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(0);
+    let month = parts
+        .next()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(0);
+    let day = parts
+        .next()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(0);
     let hour = parts
         .next()
         .and_then(|value| value.split('.').next())

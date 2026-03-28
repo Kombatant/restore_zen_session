@@ -48,7 +48,10 @@ pub struct RestoreArgs {
 pub fn run(cli: Cli) -> Result<()> {
     let profile = resolve_profile(cli.profile)?;
 
-    match cli.command.ok_or_else(|| anyhow::anyhow!("no CLI command was provided"))? {
+    match cli
+        .command
+        .ok_or_else(|| anyhow::anyhow!("no CLI command was provided"))?
+    {
         Command::List => list_backups(&profile),
         Command::Show(selector) => show_backup(&profile, &selector.backup),
         Command::Restore(args) => restore_backup(&profile, &args),
@@ -76,7 +79,10 @@ fn list_backups(profile: &PathBuf) -> Result<()> {
     }
 
     println!("Profile: {}", profile.display());
-    println!("Backup directory: {}", zen::profile_backup_dir(profile).display());
+    println!(
+        "Backup directory: {}",
+        zen::profile_backup_dir(profile).display()
+    );
     println!();
 
     for (index, backup) in backups.iter().enumerate() {

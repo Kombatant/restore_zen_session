@@ -5,17 +5,10 @@ import QtQuick.Layouts
 
 ApplicationWindow {
     id: window
-    width: 1440
-    height: 920
-    minimumWidth: 1180
-    minimumHeight: 760
-    visible: true
-    title: "Restore Zen Session"
-    color: outerBackground
-    flags: Qt.Window | Qt.FramelessWindowHint
 
     property var backupsModel: []
-    property var activeBackup: ({})
+    property var activeBackup: ({
+    })
     property var backendRef: typeof backend !== "undefined" ? backend : null
     property bool syncInFlight: false
     property string repositoryReadmeUrl: "https://github.com/Kombatant/restore_zen_session#readme"
@@ -28,15 +21,13 @@ ApplicationWindow {
     property int kdeSidebarDateFontPx: kdeBaseFontPx + 2
     property int kdeSectionFontPx: kdeBaseFontPx + 4
     property int kdeTitleFontPx: kdeBaseFontPx + 11
-
     readonly property bool darkTheme: (palette.window.r * 0.299 + palette.window.g * 0.587 + palette.window.b * 0.114) < 0.5
     readonly property color textOnAccent: palette.highlightedText
-    readonly property color warningBase: Qt.rgba(0.82, 0.58, 0.22, 1.0)
-    readonly property color criticalBase: Qt.rgba(0.80, 0.34, 0.39, 1.0)
-    readonly property color successBase: Qt.rgba(0.24, 0.66, 0.48, 1.0)
+    readonly property color warningBase: Qt.rgba(0.82, 0.58, 0.22, 1)
+    readonly property color criticalBase: Qt.rgba(0.8, 0.34, 0.39, 1)
+    readonly property color successBase: Qt.rgba(0.24, 0.66, 0.48, 1)
     readonly property color syncConnectedDot: "#2ecc71"
     readonly property color syncDisconnectedDot: "#e74c3c"
-
     property color outerBackground: palette.window
     property color shellBackground: blend(palette.window, palette.base, darkTheme ? 0.22 : 0.06)
     property color titlebarBackground: blend(palette.window, palette.button, darkTheme ? 0.28 : 0.08)
@@ -63,397 +54,237 @@ ApplicationWindow {
     property color successText: blend(successBase, textPrimary, darkTheme ? 0.32 : 0.18)
 
     function blend(baseColor, mixColor, amount) {
-        const clampedAmount = Math.max(0, Math.min(1, amount))
-        return Qt.rgba(
-            baseColor.r + (mixColor.r - baseColor.r) * clampedAmount,
-            baseColor.g + (mixColor.g - baseColor.g) * clampedAmount,
-            baseColor.b + (mixColor.b - baseColor.b) * clampedAmount,
-            baseColor.a + (mixColor.a - baseColor.a) * clampedAmount
-        )
+        const clampedAmount = Math.max(0, Math.min(1, amount));
+        return Qt.rgba(baseColor.r + (mixColor.r - baseColor.r) * clampedAmount, baseColor.g + (mixColor.g - baseColor.g) * clampedAmount, baseColor.b + (mixColor.b - baseColor.b) * clampedAmount, baseColor.a + (mixColor.a - baseColor.a) * clampedAmount);
     }
 
     function withAlpha(sourceColor, alphaValue) {
-        return Qt.rgba(sourceColor.r, sourceColor.g, sourceColor.b, alphaValue)
+        return Qt.rgba(sourceColor.r, sourceColor.g, sourceColor.b, alphaValue);
     }
 
     function parseBackups() {
         if (!backendRef) {
-            backupsModel = []
-            return
+            backupsModel = [];
+            return ;
         }
         try {
-            backupsModel = JSON.parse(backendRef.backups_json)
+            backupsModel = JSON.parse(backendRef.backups_json);
         } catch (error) {
-            backupsModel = []
+            backupsModel = [];
         }
     }
 
     function parseActiveBackup() {
         if (!backendRef) {
-            activeBackup = ({})
-            return
+            activeBackup = ({
+            });
+            return ;
         }
         try {
-            activeBackup = JSON.parse(backendRef.active_backup_json)
+            activeBackup = JSON.parse(backendRef.active_backup_json);
         } catch (error) {
-            activeBackup = ({})
+            activeBackup = ({
+            });
         }
     }
 
     function localizedSnapshotLabel(savedAtMs, fallbackLabel) {
         if (savedAtMs === undefined || savedAtMs === null)
-            return fallbackLabel
+            return fallbackLabel;
 
-        const snapshotDate = new Date(savedAtMs)
+        const snapshotDate = new Date(savedAtMs);
         if (isNaN(snapshotDate.getTime()))
-            return fallbackLabel
+            return fallbackLabel;
 
-        return Qt.locale().toString(snapshotDate, Locale.ShortFormat)
+        return Qt.locale().toString(snapshotDate, Locale.ShortFormat);
     }
 
     function restorableTabsInCollection(collection) {
         if (!collection || !collection.tabs)
-            return 0
+            return 0;
 
-        let total = 0
+        let total = 0;
         for (let i = 0; i < collection.tabs.length; ++i) {
             if (collection.tabs[i].restorable)
-                total += 1
+                total += 1;
+
         }
-        return total
+        return total;
     }
 
     function restorableTabsInBackup() {
         if (!activeBackup.collections)
-            return 0
+            return 0;
 
-        let total = 0
-        for (let i = 0; i < activeBackup.collections.length; ++i)
-            total += restorableTabsInCollection(activeBackup.collections[i])
-        return total
+        let total = 0;
+        for (let i = 0; i < activeBackup.collections.length; ++i) total += restorableTabsInCollection(activeBackup.collections[i])
+        return total;
     }
 
     function toggleAllInActiveBackup() {
         if (!backendRef || !activeBackup.collections)
-            return
+            return ;
 
-        const totalRestorable = restorableTabsInBackup()
-        const shouldSelect = !(totalRestorable > 0 && activeBackup.selectedTabs >= totalRestorable)
-        for (let i = 0; i < activeBackup.collections.length; ++i)
-            backendRef.toggle_collection(activeBackup.collections[i].index, shouldSelect)
+        const totalRestorable = restorableTabsInBackup();
+        const shouldSelect = !(totalRestorable > 0 && activeBackup.selectedTabs >= totalRestorable);
+        for (let i = 0; i < activeBackup.collections.length; ++i) backendRef.toggle_collection(activeBackup.collections[i].index, shouldSelect)
     }
 
     function syncFooterLabel() {
         if (!backendRef)
-            return "GOOGLE SYNC UNAVAILABLE"
+            return "GOOGLE SYNC UNAVAILABLE";
+
         if (!backendRef.google_oauth_ready)
-            return "GOOGLE SYNC NOT CONFIGURED"
+            return "GOOGLE SYNC NOT CONFIGURED";
+
         if (!backendRef.google_auth_connected)
-            return "GOOGLE SYNC DISCONNECTED"
-        return "CONNECTED TO GOOGLE SYNC"
+            return "GOOGLE SYNC DISCONNECTED";
+
+        return "CONNECTED TO GOOGLE SYNC";
     }
 
     function syncFooterDotColor() {
         if (backendRef && backendRef.google_oauth_ready && backendRef.google_auth_connected)
-            return syncConnectedDot
-        return syncDisconnectedDot
+            return syncConnectedDot;
+
+        return syncDisconnectedDot;
     }
 
     function syncFooterColor() {
-        return textMuted
+        return textMuted;
     }
 
     function hasMultipleCollections() {
-        return !!activeBackup.collections && activeBackup.collections.length > 1
+        return !!activeBackup.collections && activeBackup.collections.length > 1;
     }
 
     function statusChipLabel() {
         if (!backendRef)
-            return "Offline"
-        return backendRef.zen_running ? "Profile In Use" : "Profile Available"
+            return "Offline";
+
+        return backendRef.zen_running ? "Profile In Use" : "Profile Available";
     }
 
     function statusChipFill() {
         if (!backendRef)
-            return subtleCardBackground
-        return backendRef.zen_running ? criticalFill : surfaceBackground
+            return subtleCardBackground;
+
+        return backendRef.zen_running ? criticalFill : surfaceBackground;
     }
 
     function statusChipBorder() {
         if (!backendRef)
-            return frameColor
-        return backendRef.zen_running ? criticalBorder : frameColor
+            return frameColor;
+
+        return backendRef.zen_running ? criticalBorder : frameColor;
     }
 
     function statusChipColor() {
         if (!backendRef)
-            return textMuted
-        return backendRef.zen_running ? criticalText : textPrimary
+            return textMuted;
+
+        return backendRef.zen_running ? criticalText : textPrimary;
     }
 
     function tabAccentColor(tab) {
         if (tab && !tab.restorable)
-            return criticalText
+            return criticalText;
+
         if (tab && tab.essential)
-            return warningText
+            return warningText;
+
         if (tab && tab.pinned)
-            return accentBlue
-        return textMuted
+            return accentBlue;
+
+        return textMuted;
     }
 
     function tabAccentFillColor(tab) {
         if (tab && !tab.restorable)
-            return criticalFill
+            return criticalFill;
+
         if (tab && tab.essential)
-            return warningFill
+            return warningFill;
+
         if (tab && tab.pinned)
-            return accentBlueFaint
-        return rowBackground
+            return accentBlueFaint;
+
+        return rowBackground;
     }
 
     function tabMonogram(tab) {
         if (tab && tab.url) {
-            let host = tab.url.replace(/^https?:\/\//, "").split("/")[0]
-            let parts = host.split(".").filter(function(part) { return part.length > 0 && part !== "www" })
+            let host = tab.url.replace(/^https?:\/\//, "").split("/")[0];
+            let parts = host.split(".").filter(function(part) {
+                return part.length > 0 && part !== "www";
+            });
             if (parts.length > 0) {
-                let base = parts.length > 1 ? parts[parts.length - 2] : parts[0]
-                return base.substring(0, Math.min(2, base.length)).toUpperCase()
+                let base = parts.length > 1 ? parts[parts.length - 2] : parts[0];
+                return base.substring(0, Math.min(2, base.length)).toUpperCase();
             }
         }
-
-        const source = tab && tab.title ? tab.title : "ZS"
-        const words = source.split(/[\s\-_:.|/]+/).filter(function(part) { return part.length > 0 })
+        const source = tab && tab.title ? tab.title : "ZS";
+        const words = source.split(/[\s\-_:.|/]+/).filter(function(part) {
+            return part.length > 0;
+        });
         if (words.length >= 2)
-            return (words[0][0] + words[1][0]).toUpperCase()
-        return source.substring(0, Math.min(2, source.length)).toUpperCase()
+            return (words[0][0] + words[1][0]).toUpperCase();
+
+        return source.substring(0, Math.min(2, source.length)).toUpperCase();
     }
 
     function tabGlyph(tab) {
-        const key = (((tab && tab.url) ? tab.url : "") + " " + ((tab && tab.title) ? tab.title : "")).toLowerCase()
-
+        const key = (((tab && tab.url) ? tab.url : "") + " " + ((tab && tab.title) ? tab.title : "")).toLowerCase();
         if (key.indexOf("weather") !== -1)
-            return "\u2601"
+            return "\u2601";
+
         if (key.indexOf("outlook") !== -1 || key.indexOf("mail") !== -1 || key.indexOf("inbox") !== -1)
-            return "\u2709"
+            return "\u2709";
+
         if (key.indexOf("github") !== -1)
-            return "\u2398"
+            return "\u2398";
+
         if (key.indexOf("google") !== -1 || key.indexOf("search") !== -1)
-            return "\u2315"
+            return "\u2315";
+
         if (key.indexOf("docker") !== -1 || key.indexOf("code") !== -1)
-            return "<>"
+            return "<>";
+
         if (key.indexOf("terminal") !== -1 || key.indexOf("shell") !== -1)
-            return "\u2332"
-        return "\u25e7"
+            return "\u2332";
+
+        return "\u25e7";
     }
 
-    component ChromeButton: Button {
-        id: control
-        property bool danger: false
+    width: 1440
+    height: 920
+    minimumWidth: 1180
+    minimumHeight: 760
+    visible: true
+    title: "Restore Zen Session"
+    color: outerBackground
+    flags: Qt.Window | Qt.FramelessWindowHint
+    Component.onCompleted: {
+        parseBackups();
+        parseActiveBackup();
+        if (backendRef && backendRef.show_about_on_startup)
+            aboutDialog.open();
 
-        implicitWidth: 28
-        implicitHeight: 28
-        padding: 0
-        hoverEnabled: true
+        if (backendRef && backendRef.should_prompt_for_profile)
+            profileFolderDialog.open();
 
-        background: Rectangle {
-            radius: 4
-            color: {
-                if (!control.enabled)
-                    return "transparent"
-                if (control.danger)
-                    return control.down ? blend(criticalFill, criticalText, 0.2) : (control.hovered ? criticalFill : "transparent")
-                return control.down ? blend(titlebarBackground, textPrimary, 0.1) : (control.hovered ? hoverBackground : "transparent")
-            }
-            border.width: control.hovered ? 1 : 0
-            border.color: control.danger ? criticalBorder : frameColor
-        }
-
-        contentItem: Label {
-            text: control.text
-            color: control.danger ? criticalText : textMuted
-            horizontalAlignment: Text.AlignHCenter
-            verticalAlignment: Text.AlignVCenter
-            font.pixelSize: window.kdeBodyFontPx
-            font.weight: Font.Medium
-        }
-    }
-
-    component ActionButton: Button {
-        id: control
-        property bool primary: false
-        property bool compact: false
-        property bool warning: false
-
-        hoverEnabled: true
-        leftPadding: compact ? 12 : 16
-        rightPadding: compact ? 12 : 16
-        topPadding: compact ? 7 : 10
-        bottomPadding: compact ? 7 : 10
-
-        background: Rectangle {
-            radius: 4
-            opacity: control.enabled ? 1.0 : 0.5
-            color: {
-                if (control.primary)
-                    return control.down ? blend(accentBlue, textPrimary, 0.14) : accentBlue
-                if (control.warning)
-                    return control.down ? blend(warningFill, warningText, 0.14) : warningFill
-                return control.down ? blend(cardBackground, textPrimary, 0.08) : (control.hovered ? hoverBackground : cardBackground)
-            }
-            border.width: 1
-            border.color: {
-                if (control.primary)
-                    return accentBlueBorder
-                if (control.warning)
-                    return warningBorder
-                return frameColor
-            }
-        }
-
-        contentItem: Label {
-            text: control.text
-            horizontalAlignment: Text.AlignHCenter
-            verticalAlignment: Text.AlignVCenter
-            color: control.primary ? textOnAccent : (control.warning ? warningText : textPrimary)
-            font.pixelSize: control.compact ? window.kdeSmallFontPx : window.kdeBodyFontPx
-            font.weight: Font.Medium
-        }
-    }
-
-    component AccentCheckBox: CheckBox {
-        id: control
-        spacing: 8
-        hoverEnabled: true
-
-        indicator: Rectangle {
-            implicitWidth: 16
-            implicitHeight: 16
-            radius: 3
-            color: control.checked ? accentBlue : "transparent"
-            border.width: 1
-            border.color: control.enabled ? (control.checked ? accentBlueBorder : blend(frameColor, textMuted, 0.35)) : frameColor
-
-            Label {
-                anchors.centerIn: parent
-                visible: control.checked
-                text: "\u2713"
-                color: textOnAccent
-                font.pixelSize: 11
-                font.weight: Font.DemiBold
-            }
-        }
-
-        contentItem: Label {
-            text: control.text
-            leftPadding: control.indicator.width + control.spacing
-            verticalAlignment: Text.AlignVCenter
-            elide: Text.ElideRight
-            color: control.enabled ? textPrimary : textFaint
-            font.pixelSize: window.kdeBodyFontPx
-        }
-    }
-
-    component AccentSpinBox: SpinBox {
-        id: control
-        implicitWidth: 88
-        implicitHeight: 32
-        editable: false
-
-        contentItem: TextInput {
-            text: control.displayText
-            readOnly: true
-            horizontalAlignment: Text.AlignHCenter
-            verticalAlignment: Text.AlignVCenter
-            color: textPrimary
-            font.pixelSize: window.kdeBodyFontPx
-            selectedTextColor: textPrimary
-            selectionColor: accentBlueSoft
-        }
-
-        up.indicator: Rectangle {
-            implicitWidth: 24
-            implicitHeight: 30
-            x: control.width - width - 1
-            y: 1
-            radius: 4
-            color: control.up.pressed ? hoverBackground : "transparent"
-
-            Label {
-                anchors.centerIn: parent
-                text: "+"
-                color: textMuted
-                font.pixelSize: window.kdeUiFontPx
-                font.weight: Font.DemiBold
-            }
-        }
-
-        down.indicator: Rectangle {
-            implicitWidth: 24
-            implicitHeight: 30
-            x: 1
-            y: 1
-            radius: 4
-            color: control.down.pressed ? hoverBackground : "transparent"
-
-            Label {
-                anchors.centerIn: parent
-                text: "-"
-                color: textMuted
-                font.pixelSize: window.kdeSectionFontPx
-                font.weight: Font.DemiBold
-            }
-        }
-
-        background: Rectangle {
-            radius: 4
-            color: titlebarBackground
-            border.width: 1
-            border.color: frameColor
-        }
-    }
-
-    component MetaChip: Rectangle {
-        id: chip
-        property string label: ""
-        property color fillColor: surfaceBackground
-        property color strokeColor: frameColor
-        property color labelColor: textMuted
-
-        implicitHeight: 20
-        implicitWidth: chipLabel.implicitWidth + 14
-        radius: 10
-        color: fillColor
-        border.width: 1
-        border.color: strokeColor
-
-        Label {
-            id: chipLabel
-            anchors.centerIn: parent
-            text: chip.label
-            color: chip.labelColor
-            font.pixelSize: window.kdeTinyFontPx
-            font.weight: Font.DemiBold
-        }
     }
 
     Connections {
+        function onBackups_jsonChanged() {
+            parseBackups();
+        }
+
+        function onActive_backup_jsonChanged() {
+            parseActiveBackup();
+        }
+
         target: backendRef
-
-        function onBackups_jsonChanged() { parseBackups() }
-        function onActive_backup_jsonChanged() { parseActiveBackup() }
-    }
-
-    Component.onCompleted: {
-        parseBackups()
-        parseActiveBackup()
-        if (backendRef && backendRef.show_about_on_startup)
-            aboutDialog.open()
-        if (backendRef && backendRef.should_prompt_for_profile)
-            profileFolderDialog.open()
-    }
-
-    background: Rectangle {
-        color: outerBackground
     }
 
     Rectangle {
@@ -481,7 +312,8 @@ ApplicationWindow {
                     acceptedButtons: Qt.LeftButton
                     onPressed: function(mouse) {
                         if (mouse.button === Qt.LeftButton)
-                            window.startSystemMove()
+                            window.startSystemMove();
+
                     }
                 }
 
@@ -513,6 +345,7 @@ ApplicationWindow {
                                 color: accentBlueBorder
                                 font.pixelSize: 8
                             }
+
                         }
 
                         Label {
@@ -521,6 +354,7 @@ ApplicationWindow {
                             font.pixelSize: window.kdeSmallFontPx
                             font.weight: Font.Medium
                         }
+
                     }
 
                     Item {
@@ -535,7 +369,11 @@ ApplicationWindow {
                             enabled: !!backendRef
                             ToolTip.visible: hovered
                             ToolTip.text: "Refresh"
-                            onClicked: if (backendRef) backendRef.refresh()
+                            onClicked: {
+                                if (backendRef) {
+                                    backendRef.refresh();
+                                }
+                            }
                         }
 
                         ChromeButton {
@@ -545,6 +383,7 @@ ApplicationWindow {
                             ToolTip.text: "Select the Zen profile folder"
                             onClicked: profileFolderDialog.open()
                         }
+
                     }
 
                     Rectangle {
@@ -571,9 +410,9 @@ ApplicationWindow {
                             text: "\u25a1"
                             onClicked: {
                                 if (window.visibility === Window.Maximized)
-                                    window.showNormal()
+                                    window.showNormal();
                                 else
-                                    window.showMaximized()
+                                    window.showMaximized();
                             }
                         }
 
@@ -582,8 +421,11 @@ ApplicationWindow {
                             danger: true
                             onClicked: window.close()
                         }
+
                     }
+
                 }
+
             }
 
             RowLayout {
@@ -628,10 +470,12 @@ ApplicationWindow {
                                 }
 
                             }
+
                         }
 
                         ListView {
                             id: snapshotList
+
                             Layout.fillWidth: true
                             Layout.fillHeight: true
                             clip: true
@@ -644,12 +488,15 @@ ApplicationWindow {
 
                             ScrollBar.vertical: ScrollBar {
                                 id: snapshotScrollBar
+
                                 policy: ScrollBar.AsNeeded
                             }
 
                             delegate: Rectangle {
                                 id: snapshotCard
+
                                 required property var modelData
+
                                 width: snapshotList.width - snapshotList.leftMargin - snapshotList.rightMargin
                                 height: 80
                                 radius: 4
@@ -659,9 +506,14 @@ ApplicationWindow {
 
                                 MouseArea {
                                     id: snapshotHover
+
                                     anchors.fill: parent
                                     hoverEnabled: true
-                                    onClicked: if (backendRef) backendRef.select_backup(snapshotCard.modelData.index)
+                                    onClicked: {
+                                        if (backendRef) {
+                                            backendRef.select_backup(snapshotCard.modelData.index);
+                                        }
+                                    }
                                 }
 
                                 ColumnLayout {
@@ -687,10 +539,15 @@ ApplicationWindow {
                                         font.weight: Font.DemiBold
                                         font.letterSpacing: 0.7
                                     }
+
                                 }
+
                             }
+
                         }
+
                     }
+
                 }
 
                 Rectangle {
@@ -707,9 +564,19 @@ ApplicationWindow {
 
                         gradient: Gradient {
                             orientation: Gradient.Horizontal
-                            GradientStop { position: 0.0; color: withAlpha(accentBlue, 0.0) }
-                            GradientStop { position: 1.0; color: withAlpha(accentBlue, darkTheme ? 0.2 : 0.12) }
+
+                            GradientStop {
+                                position: 0
+                                color: withAlpha(accentBlue, 0)
+                            }
+
+                            GradientStop {
+                                position: 1
+                                color: withAlpha(accentBlue, darkTheme ? 0.2 : 0.12)
+                            }
+
                         }
+
                     }
 
                     ColumnLayout {
@@ -733,6 +600,7 @@ ApplicationWindow {
 
                             ActionButton {
                                 id: restoreSelectedButton
+
                                 anchors.right: parent.right
                                 anchors.top: parent.top
                                 anchors.rightMargin: 28
@@ -751,7 +619,9 @@ ApplicationWindow {
                                     acceptedButtons: Qt.RightButton
                                     onTapped: restoreMoreMenu.open()
                                 }
+
                             }
+
                         }
 
                         Item {
@@ -777,13 +647,17 @@ ApplicationWindow {
                                 spacing: 22
 
                                 Repeater {
-                                    model: [
-                                        { "label": "Snapshot", "index": 0 },
-                                        { "label": "Google Sync", "index": 1 }
-                                    ]
+                                    model: [{
+                                        "label": "Snapshot",
+                                        "index": 0
+                                    }, {
+                                        "label": "Google Sync",
+                                        "index": 1
+                                    }]
 
                                     delegate: Item {
                                         required property var modelData
+
                                         implicitWidth: tabLabel.implicitWidth
                                         implicitHeight: 34
 
@@ -794,6 +668,7 @@ ApplicationWindow {
 
                                         Label {
                                             id: tabLabel
+
                                             anchors.left: parent.left
                                             anchors.bottom: parent.bottom
                                             anchors.bottomMargin: 8
@@ -810,13 +685,17 @@ ApplicationWindow {
                                             height: 2
                                             color: currentSection === modelData.index ? accentBlue : "transparent"
                                         }
+
                                     }
+
                                 }
 
                                 Item {
                                     Layout.fillWidth: true
                                 }
+
                             }
+
                         }
 
                         StackLayout {
@@ -851,15 +730,14 @@ ApplicationWindow {
                                         Label {
                                             Layout.alignment: Qt.AlignBottom
                                             Layout.fillWidth: true
-                                            text: activeBackup.collections
-                                                ? activeBackup.collections.length + " spaces \u2022 " + (activeBackup.totalTabs || 0) + " tabs \u2022 " + (activeBackup.selectedTabs || 0) + " selected"
-                                                : "No snapshot selected"
+                                            text: activeBackup.collections ? activeBackup.collections.length + " spaces \u2022 " + (activeBackup.totalTabs || 0) + " tabs \u2022 " + (activeBackup.selectedTabs || 0) + " selected" : "No snapshot selected"
                                             color: textMuted
                                             font.pixelSize: window.kdeBodyFontPx
                                         }
 
                                         ActionButton {
                                             id: selectAllButton
+
                                             compact: true
                                             Layout.alignment: Qt.AlignBottom
                                             Layout.minimumWidth: restoreSelectedButton.implicitWidth
@@ -870,10 +748,12 @@ ApplicationWindow {
                                             enabled: !!backendRef && !!activeBackup.collections && activeBackup.collections.length > 0
                                             onClicked: toggleAllInActiveBackup()
                                         }
+
                                     }
 
                                     ScrollView {
                                         id: snapshotScroll
+
                                         Layout.fillWidth: true
                                         Layout.fillHeight: true
                                         clip: true
@@ -884,6 +764,7 @@ ApplicationWindow {
 
                                             ColumnLayout {
                                                 id: snapshotColumn
+
                                                 width: parent.width
                                                 spacing: 12
 
@@ -898,6 +779,7 @@ ApplicationWindow {
 
                                                     ColumnLayout {
                                                         id: emptyStateContent
+
                                                         anchors.centerIn: parent
                                                         spacing: 8
 
@@ -915,7 +797,9 @@ ApplicationWindow {
                                                             wrapMode: Text.WordWrap
                                                             horizontalAlignment: Text.AlignHCenter
                                                         }
+
                                                     }
+
                                                 }
 
                                                 Repeater {
@@ -923,14 +807,17 @@ ApplicationWindow {
 
                                                     delegate: Item {
                                                         id: collectionCard
+
                                                         required property var modelData
                                                         property int collectionIndex: modelData.index
                                                         property int selectableTabCount: window.restorableTabsInCollection(modelData)
+
                                                         Layout.fillWidth: true
                                                         implicitHeight: collectionBody.implicitHeight
 
                                                         ColumnLayout {
                                                             id: collectionBody
+
                                                             anchors.left: parent.left
                                                             anchors.right: parent.right
                                                             spacing: 10
@@ -967,7 +854,9 @@ ApplicationWindow {
                                                                             color: textFaint
                                                                             font.pixelSize: 11
                                                                         }
+
                                                                     }
+
                                                                 }
 
                                                                 ActionButton {
@@ -975,8 +864,13 @@ ApplicationWindow {
                                                                     text: collectionCard.selectableTabCount > 0 && collectionCard.modelData.selectedCount >= collectionCard.selectableTabCount ? "Deselect All" : "Select All"
                                                                     enabled: !!backendRef && collectionCard.selectableTabCount > 0
                                                                     visible: false
-                                                                    onClicked: if (backendRef) backendRef.toggle_collection(collectionCard.modelData.index, !(collectionCard.selectableTabCount > 0 && collectionCard.modelData.selectedCount >= collectionCard.selectableTabCount))
+                                                                    onClicked: {
+                                                                        if (backendRef) {
+                                                                            backendRef.toggle_collection(collectionCard.modelData.index, !(collectionCard.selectableTabCount > 0 && collectionCard.modelData.selectedCount >= collectionCard.selectableTabCount));
+                                                                        }
+                                                                    }
                                                                 }
+
                                                             }
 
                                                             Repeater {
@@ -984,6 +878,7 @@ ApplicationWindow {
 
                                                                 delegate: Rectangle {
                                                                     required property var modelData
+
                                                                     Layout.fillWidth: true
                                                                     radius: 4
                                                                     color: modelData.selected ? accentBlueSoft : rowBackground
@@ -993,6 +888,7 @@ ApplicationWindow {
 
                                                                     RowLayout {
                                                                         id: tabRowLayout
+
                                                                         anchors.fill: parent
                                                                         anchors.margins: 12
                                                                         spacing: 12
@@ -1001,7 +897,11 @@ ApplicationWindow {
                                                                             Layout.alignment: Qt.AlignTop
                                                                             checked: modelData.selected
                                                                             enabled: modelData.restorable
-                                                                            onToggled: if (backendRef) backendRef.toggle_tab(collectionCard.collectionIndex, modelData.index, checked)
+                                                                            onToggled: {
+                                                                                if (backendRef) {
+                                                                                    backendRef.toggle_tab(collectionCard.collectionIndex, modelData.index, checked);
+                                                                                }
+                                                                            }
                                                                         }
 
                                                                         Rectangle {
@@ -1019,6 +919,7 @@ ApplicationWindow {
                                                                                 font.pixelSize: window.tabGlyph(modelData) === "<>" ? 13 : 16
                                                                                 font.weight: Font.DemiBold
                                                                             }
+
                                                                         }
 
                                                                         ColumnLayout {
@@ -1063,6 +964,7 @@ ApplicationWindow {
                                                                                     strokeColor: criticalBorder
                                                                                     labelColor: criticalText
                                                                                 }
+
                                                                             }
 
                                                                             Label {
@@ -1073,21 +975,33 @@ ApplicationWindow {
                                                                                 color: modelData.selected ? accentBlue : textMuted
                                                                                 font.pixelSize: window.kdeBodyFontPx
                                                                             }
+
                                                                         }
+
                                                                     }
+
                                                                 }
+
                                                             }
+
                                                         }
+
                                                     }
+
                                                 }
 
                                                 Item {
                                                     Layout.fillHeight: true
                                                 }
+
                                             }
+
                                         }
+
                                     }
+
                                 }
+
                             }
 
                             Item {
@@ -1104,6 +1018,7 @@ ApplicationWindow {
 
                                         ColumnLayout {
                                             id: syncColumn
+
                                             width: parent.width
                                             anchors.leftMargin: 0
                                             anchors.rightMargin: 0
@@ -1122,6 +1037,7 @@ ApplicationWindow {
 
                                                 ColumnLayout {
                                                     id: syncSummary
+
                                                     anchors.fill: parent
                                                     anchors.margins: 14
                                                     spacing: 8
@@ -1139,7 +1055,9 @@ ApplicationWindow {
                                                         text: backendRef ? backendRef.cloud_sync_status_text : "Configure Google Drive sync for zen-sessions-backup."
                                                         color: textMuted
                                                     }
+
                                                 }
+
                                             }
 
                                             Rectangle {
@@ -1155,15 +1073,19 @@ ApplicationWindow {
 
                                                 Label {
                                                     id: googleWarning
+
                                                     anchors.fill: parent
                                                     anchors.margins: 12
                                                     wrapMode: Text.WordWrap
                                                     textFormat: Text.RichText
                                                     color: warningText
                                                     linkColor: accentBlue
-                                                    text: "Cloud Sync is disabled because <b>google.json</b> was not found next to the app. Add your Google Client ID and Client Secret in that file, then reopen the app. See the GitHub README for setup details: <a href=\"" + repositoryReadmeUrl + "\">" + repositoryReadmeUrl + "</a>"
-                                                    onLinkActivated: function(link) { Qt.openUrlExternally(link) }
+                                                    text: "Cloud Sync needs your Google OAuth desktop credentials before sign-in can start. Press <b>Set Up Google Drive</b> to save your Google Client ID and Client Secret in KDE Wallet. Setup details: <a href=\"" + repositoryReadmeUrl + "\">" + repositoryReadmeUrl + "</a>"
+                                                    onLinkActivated: function(link) {
+                                                        Qt.openUrlExternally(link);
+                                                    }
                                                 }
+
                                             }
 
                                             Rectangle {
@@ -1178,6 +1100,7 @@ ApplicationWindow {
 
                                                 ColumnLayout {
                                                     id: syncControls
+
                                                     anchors.fill: parent
                                                     anchors.margins: 14
                                                     spacing: 14
@@ -1186,7 +1109,11 @@ ApplicationWindow {
                                                         text: "Sync backup folder"
                                                         checked: backendRef ? backendRef.cloud_sync_enabled : false
                                                         enabled: !!backendRef && backendRef.google_oauth_ready
-                                                        onToggled: if (backendRef) backendRef.set_cloud_sync_enabled(checked)
+                                                        onToggled: {
+                                                            if (backendRef) {
+                                                                backendRef.set_cloud_sync_enabled(checked);
+                                                            }
+                                                        }
                                                     }
 
                                                     ColumnLayout {
@@ -1198,6 +1125,7 @@ ApplicationWindow {
 
                                                             ColumnLayout {
                                                                 id: syncActionsColumn
+
                                                                 anchors.fill: parent
                                                                 spacing: 10
 
@@ -1208,20 +1136,30 @@ ApplicationWindow {
                                                                     enabled: !!backendRef && backendRef.google_oauth_ready && backendRef.cloud_sync_enabled && backendRef.google_auth_connected && !syncInFlight && !backendRef.cloud_sync_in_progress
                                                                     onClicked: {
                                                                         if (!backendRef)
-                                                                            return
-                                                                        syncInFlight = true
+                                                                            return ;
+
+                                                                        syncInFlight = true;
                                                                         Qt.callLater(function() {
-                                                                            backendRef.sync_cloud_backup()
-                                                                            syncInFlight = false
-                                                                        })
+                                                                            backendRef.sync_cloud_backup();
+                                                                            syncInFlight = false;
+                                                                        });
                                                                     }
                                                                 }
 
                                                                 ActionButton {
                                                                     Layout.fillWidth: true
-                                                                    text: backendRef && backendRef.google_auth_connected ? "Reconnect Google Drive" : "Connect Google Drive"
-                                                                    enabled: !!backendRef && backendRef.google_oauth_ready
-                                                                    onClicked: if (backendRef) backendRef.connect_google_drive()
+                                                                    text: !backendRef || !backendRef.google_oauth_ready ? "Set Up Google Drive" : (backendRef.google_auth_connected ? "Reconnect Google Drive" : "Connect Google Drive")
+                                                                    enabled: !!backendRef
+                                                                    onClicked: {
+                                                                        if (!backendRef)
+                                                                            return ;
+
+                                                                        if (!backendRef.google_oauth_ready) {
+                                                                            oauthCredentialsDialog.open();
+                                                                            return ;
+                                                                        }
+                                                                        reconnectChoiceDialog.open();
+                                                                    }
                                                                 }
 
                                                                 ActionButton {
@@ -1229,10 +1167,17 @@ ApplicationWindow {
                                                                     text: "Disconnect"
                                                                     warning: true
                                                                     enabled: !!backendRef && backendRef.google_oauth_ready && backendRef.google_auth_connected
-                                                                    onClicked: if (backendRef) backendRef.disconnect_google_drive()
+                                                                    onClicked: {
+                                                                        if (backendRef) {
+                                                                            backendRef.disconnect_google_drive();
+                                                                        }
+                                                                    }
                                                                 }
+
                                                             }
+
                                                         }
+
                                                     }
 
                                                     RowLayout {
@@ -1248,31 +1193,32 @@ ApplicationWindow {
                                                             to: 12
                                                             value: backendRef ? backendRef.retention_months : 3
                                                             enabled: !!backendRef && backendRef.google_oauth_ready
-                                                            onValueModified: if (backendRef) backendRef.set_retention_months(value)
+                                                            onValueModified: {
+                                                                if (backendRef) {
+                                                                    backendRef.set_retention_months(value);
+                                                                }
+                                                            }
                                                         }
 
                                                         Label {
                                                             text: "months"
                                                             color: textMuted
                                                         }
+
                                                     }
 
                                                     Label {
                                                         Layout.fillWidth: true
                                                         wrapMode: Text.WordWrap
                                                         color: textPrimary
-                                                        text: backendRef && backendRef.google_oauth_ready
-                                                            ? (backendRef.google_auth_connected
-                                                                ? "Google Drive is connected for this app."
-                                                                : "Connect in your browser to grant Google Drive access.")
-                                                            : "Google Drive sign-in is disabled until google.json is added beside the app."
+                                                        text: backendRef && backendRef.google_oauth_ready ? (backendRef.google_auth_connected ? "Google Drive is connected for this app." : "Connect in your browser to grant Google Drive access.") : "Set up Google OAuth credentials to save them in KDE Wallet and enable sign-in."
                                                     }
 
                                                     Label {
                                                         Layout.fillWidth: true
                                                         wrapMode: Text.WordWrap
                                                         color: textMuted
-                                                        text: "The app opens your browser for Google sign-in, stores the refresh token locally, and mirrors zen-sessions-backup into Google Drive under Backup/Zen."
+                                                        text: "The app stores your Google Client ID and Client Secret in KDE Wallet, keeps the Google refresh token in local app settings, and mirrors zen-sessions-backup into Google Drive under Backup/Zen."
                                                     }
 
                                                     ColumnLayout {
@@ -1282,6 +1228,15 @@ ApplicationWindow {
 
                                                         Rectangle {
                                                             id: syncProgressTrack
+
+                                                            property bool determinate: backendRef && backendRef.cloud_sync_progress_total > 1
+                                                            property real progressRatio: {
+                                                                if (!backendRef || backendRef.cloud_sync_progress_total <= 0)
+                                                                    return 0;
+
+                                                                return Math.max(0, Math.min(1, backendRef.cloud_sync_progress_current / backendRef.cloud_sync_progress_total));
+                                                            }
+
                                                             Layout.fillWidth: true
                                                             implicitHeight: 12
                                                             radius: 6
@@ -1290,37 +1245,19 @@ ApplicationWindow {
                                                             border.color: accentBlueFaint
                                                             clip: true
 
-                                                            property bool determinate: backendRef && backendRef.cloud_sync_progress_total > 1
-                                                            property real progressRatio: {
-                                                                if (!backendRef || backendRef.cloud_sync_progress_total <= 0)
-                                                                    return 0
-                                                                return Math.max(0, Math.min(1, backendRef.cloud_sync_progress_current / backendRef.cloud_sync_progress_total))
-                                                            }
-
                                                             Rectangle {
                                                                 id: syncProgressFill
+
                                                                 visible: syncProgressTrack.determinate
                                                                 anchors.left: parent.left
                                                                 anchors.top: parent.top
                                                                 anchors.bottom: parent.bottom
                                                                 width: Math.max(18, syncProgressTrack.width * syncProgressTrack.progressRatio)
                                                                 radius: 6
-                                                                gradient: Gradient {
-                                                                    orientation: Gradient.Horizontal
-                                                                    GradientStop { position: 0.0; color: blend(accentBlue, textPrimary, 0.05) }
-                                                                    GradientStop { position: 0.55; color: accentBlue }
-                                                                    GradientStop { position: 1.0; color: accentBlueBorder }
-                                                                }
-
-                                                                Behavior on width {
-                                                                    NumberAnimation {
-                                                                        duration: 260
-                                                                        easing.type: Easing.OutCubic
-                                                                    }
-                                                                }
 
                                                                 Rectangle {
                                                                     id: syncProgressShimmer
+
                                                                     visible: syncProgressFill.visible
                                                                     width: Math.max(36, syncProgressFill.width * 0.32)
                                                                     anchors.top: parent.top
@@ -1333,44 +1270,101 @@ ApplicationWindow {
                                                                     SequentialAnimation on x {
                                                                         running: syncProgressShimmer.visible
                                                                         loops: Animation.Infinite
+
                                                                         NumberAnimation {
                                                                             from: -syncProgressShimmer.width
                                                                             to: syncProgressFill.width
                                                                             duration: 1150
                                                                             easing.type: Easing.InOutQuad
                                                                         }
-                                                                        PauseAnimation { duration: 220 }
+
+                                                                        PauseAnimation {
+                                                                            duration: 220
+                                                                        }
+
                                                                     }
+
                                                                 }
+
+                                                                gradient: Gradient {
+                                                                    orientation: Gradient.Horizontal
+
+                                                                    GradientStop {
+                                                                        position: 0
+                                                                        color: blend(accentBlue, textPrimary, 0.05)
+                                                                    }
+
+                                                                    GradientStop {
+                                                                        position: 0.55
+                                                                        color: accentBlue
+                                                                    }
+
+                                                                    GradientStop {
+                                                                        position: 1
+                                                                        color: accentBlueBorder
+                                                                    }
+
+                                                                }
+
+                                                                Behavior on width {
+                                                                    NumberAnimation {
+                                                                        duration: 260
+                                                                        easing.type: Easing.OutCubic
+                                                                    }
+
+                                                                }
+
                                                             }
 
                                                             Rectangle {
                                                                 id: syncProgressIndeterminate
+
                                                                 visible: !syncProgressTrack.determinate
                                                                 width: Math.max(84, syncProgressTrack.width * 0.22)
                                                                 anchors.top: parent.top
                                                                 anchors.bottom: parent.bottom
                                                                 radius: 6
+                                                                x: -width
+
                                                                 gradient: Gradient {
                                                                     orientation: Gradient.Horizontal
-                                                                    GradientStop { position: 0.0; color: blend(accentBlue, surfaceBackground, 0.12) }
-                                                                    GradientStop { position: 0.5; color: accentBlueBorder }
-                                                                    GradientStop { position: 1.0; color: blend(accentBlue, surfaceBackground, 0.12) }
+
+                                                                    GradientStop {
+                                                                        position: 0
+                                                                        color: blend(accentBlue, surfaceBackground, 0.12)
+                                                                    }
+
+                                                                    GradientStop {
+                                                                        position: 0.5
+                                                                        color: accentBlueBorder
+                                                                    }
+
+                                                                    GradientStop {
+                                                                        position: 1
+                                                                        color: blend(accentBlue, surfaceBackground, 0.12)
+                                                                    }
+
                                                                 }
-                                                                x: -width
 
                                                                 SequentialAnimation on x {
                                                                     running: syncProgressIndeterminate.visible
                                                                     loops: Animation.Infinite
+
                                                                     NumberAnimation {
                                                                         from: -syncProgressIndeterminate.width
                                                                         to: syncProgressTrack.width
                                                                         duration: 980
                                                                         easing.type: Easing.InOutQuad
                                                                     }
-                                                                    PauseAnimation { duration: 90 }
+
+                                                                    PauseAnimation {
+                                                                        duration: 90
+                                                                    }
+
                                                                 }
+
                                                             }
+
                                                         }
 
                                                         Label {
@@ -1378,34 +1372,39 @@ ApplicationWindow {
                                                             visible: backendRef && backendRef.cloud_sync_progress_total > 1
                                                             color: textMuted
                                                             font.pixelSize: window.kdeTinyFontPx
-                                                            text: backendRef
-                                                                ? Math.round(Math.max(0, Math.min(1, backendRef.cloud_sync_progress_current / Math.max(1, backendRef.cloud_sync_progress_total))) * 100) + "%"
-                                                                : ""
+                                                            text: backendRef ? Math.round(Math.max(0, Math.min(1, backendRef.cloud_sync_progress_current / Math.max(1, backendRef.cloud_sync_progress_total))) * 100) + "%" : ""
                                                         }
 
                                                         Label {
                                                             Layout.fillWidth: true
                                                             wrapMode: Text.WordWrap
                                                             color: textPrimary
-                                                            text: backendRef && backendRef.cloud_sync_progress_text.length > 0
-                                                                ? backendRef.cloud_sync_progress_text
-                                                                : "Syncing backups with Google Drive..."
+                                                            text: backendRef && backendRef.cloud_sync_progress_text.length > 0 ? backendRef.cloud_sync_progress_text : "Syncing backups with Google Drive..."
                                                         }
+
                                                     }
+
                                                 }
+
                                             }
 
                                             Item {
                                                 Layout.fillHeight: true
                                             }
+
                                         }
+
                                     }
+
                                 }
+
                             }
+
                         }
 
                         Rectangle {
                             id: footerDivider
+
                             Layout.fillWidth: true
                             implicitHeight: 24
                             color: titlebarBackground
@@ -1443,6 +1442,7 @@ ApplicationWindow {
                                         elide: Text.ElideMiddle
                                         Layout.preferredWidth: Math.max(260, window.width * 0.38)
                                     }
+
                                 }
 
                                 Item {
@@ -1475,13 +1475,21 @@ ApplicationWindow {
                                         font.weight: Font.DemiBold
                                         font.letterSpacing: 0.9
                                     }
+
                                 }
+
                             }
+
                         }
+
                     }
+
                 }
+
             }
+
         }
+
     }
 
     Menu {
@@ -1498,12 +1506,138 @@ ApplicationWindow {
             checkable: true
             checked: backendRef ? backendRef.launch_after_restore : false
             enabled: !!backendRef
-            onTriggered: if (backendRef) backendRef.set_launch_after_restore(checked)
+            onTriggered: {
+                if (backendRef) {
+                    backendRef.set_launch_after_restore(checked);
+                }
+            }
+        }
+
+    }
+
+    Dialog {
+        id: reconnectChoiceDialog
+
+        modal: true
+        title: backendRef && backendRef.google_auth_connected ? "Reconnect Google Drive" : "Connect Google Drive"
+
+        contentItem: ColumnLayout {
+            width: 420
+            spacing: 12
+
+            Label {
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                color: palette.windowText
+                text: "Continue to Google sign-in with the saved KDE Wallet credentials, or update the Google Client ID and Client Secret first."
+            }
+
+            ActionButton {
+                Layout.fillWidth: true
+                primary: true
+                text: "Continue to Google Sign-In"
+                onClicked: {
+                    reconnectChoiceDialog.close();
+                    if (backendRef) {
+                        backendRef.connect_google_drive();
+                    }
+                }
+            }
+
+            ActionButton {
+                Layout.fillWidth: true
+                text: "Update OAuth Credentials"
+                onClicked: {
+                    reconnectChoiceDialog.close();
+                    oauthCredentialsDialog.open();
+                }
+            }
+        }
+
+        footer: DialogButtonBox {
+            standardButtons: DialogButtonBox.Cancel
+            onRejected: reconnectChoiceDialog.close()
         }
     }
 
     Dialog {
+        id: oauthCredentialsDialog
+
+        modal: true
+        title: backendRef && backendRef.google_oauth_ready ? "Update Google OAuth Credentials" : "Set Up Google Drive"
+        onOpened: {
+            clientIdField.text = "";
+            clientSecretField.text = "";
+            clientIdField.forceActiveFocus();
+        }
+
+        contentItem: ColumnLayout {
+            width: 460
+            spacing: 12
+
+            Label {
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                color: palette.windowText
+                text: "Enter the Google OAuth desktop client credentials for this app. They will be stored in KDE Wallet and used for future Google Drive sign-ins."
+            }
+
+            Label {
+                text: "Google Client ID"
+                color: palette.windowText
+            }
+
+            TextField {
+                id: clientIdField
+
+                Layout.fillWidth: true
+                placeholderText: "your-client-id.apps.googleusercontent.com"
+                selectByMouse: true
+            }
+
+            Label {
+                text: "Google Client Secret"
+                color: palette.windowText
+            }
+
+            TextField {
+                id: clientSecretField
+
+                Layout.fillWidth: true
+                echoMode: TextInput.Password
+                placeholderText: "your-google-client-secret"
+                selectByMouse: true
+            }
+
+            Label {
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                color: palette.placeholderText
+                text: "If KDE Wallet is locked or unavailable, the save step will fail and the status bar will show the reason."
+            }
+
+        }
+
+        footer: DialogButtonBox {
+            standardButtons: DialogButtonBox.Save | DialogButtonBox.Cancel
+            onAccepted: {
+                if (!backendRef)
+                    return ;
+
+                backendRef.save_google_oauth_credentials(clientIdField.text, clientSecretField.text);
+                if (backendRef.google_oauth_ready) {
+                    oauthCredentialsDialog.close();
+                    backendRef.connect_google_drive();
+                }
+            }
+            onRejected: oauthCredentialsDialog.close()
+        }
+
+    }
+
+    Dialog {
         id: aboutDialog
+
         modal: true
         title: "About Restore Zen Session"
         standardButtons: Dialog.Ok
@@ -1519,7 +1653,7 @@ ApplicationWindow {
             }
 
             Label {
-                text: "Version 0.5.0"
+                text: "Version 0.5.3"
                 color: palette.windowText
             }
 
@@ -1532,7 +1666,9 @@ ApplicationWindow {
                 Layout.fillWidth: true
                 wrapMode: Text.WordWrap
                 textFormat: Text.RichText
-                onLinkActivated: link => Qt.openUrlExternally(link)
+                onLinkActivated: (link) => {
+                    return Qt.openUrlExternally(link);
+                }
                 text: "GitHub: <a href=\"https://github.com/Kombatant/restore_zen_session\">https://github.com/Kombatant/restore_zen_session</a><br>Issues: <a href=\"https://github.com/Kombatant/restore_zen_session/issues\">https://github.com/Kombatant/restore_zen_session/issues</a>"
             }
 
@@ -1542,44 +1678,274 @@ ApplicationWindow {
                 color: palette.placeholderText
                 text: "Report bugs or restoration issues through the GitHub issues page."
             }
+
         }
+
     }
 
     Dialog {
         id: fullRestoreDialog
+
         modal: true
         title: "Restore Full Backup"
         standardButtons: Dialog.Ok | Dialog.Cancel
-        onAccepted: if (backendRef) backendRef.restore_full_backup()
+        onAccepted: {
+            if (backendRef) {
+                backendRef.restore_full_backup();
+            }
+        }
 
         contentItem: Label {
             width: 400
             wrapMode: Text.WordWrap
             text: "This will overwrite zen-sessions.jsonlz4 with the selected snapshot. Zen should be closed first. Continue?"
         }
+
     }
 
     Dialog {
         id: selectiveRestoreDialog
+
         modal: true
         title: "Restore Selected Tabs"
         standardButtons: Dialog.Ok | Dialog.Cancel
-        onAccepted: if (backendRef) backendRef.restore_selected()
+        onAccepted: {
+            if (backendRef) {
+                backendRef.restore_selected();
+            }
+        }
 
         contentItem: Label {
             width: 430
             wrapMode: Text.WordWrap
             text: "This will write a filtered zen-sessions.jsonlz4 containing only the currently selected tabs and spaces. Zen should be closed first. Continue?"
         }
+
     }
 
     FolderDialog {
         id: profileFolderDialog
-        title: "Choose Your Zen Profile Folder"
 
+        title: "Choose Your Zen Profile Folder"
         onAccepted: {
             if (backendRef)
-                backendRef.set_profile_path(selectedFolder.toLocalFile())
+                backendRef.set_profile_path(selectedFolder.toLocalFile());
+
         }
     }
+
+    component ChromeButton: Button {
+        id: control
+
+        property bool danger: false
+
+        implicitWidth: 28
+        implicitHeight: 28
+        padding: 0
+        hoverEnabled: true
+
+        background: Rectangle {
+            radius: 4
+            color: {
+                if (!control.enabled)
+                    return "transparent";
+
+                if (control.danger)
+                    return control.down ? blend(criticalFill, criticalText, 0.2) : (control.hovered ? criticalFill : "transparent");
+
+                return control.down ? blend(titlebarBackground, textPrimary, 0.1) : (control.hovered ? hoverBackground : "transparent");
+            }
+            border.width: control.hovered ? 1 : 0
+            border.color: control.danger ? criticalBorder : frameColor
+        }
+
+        contentItem: Label {
+            text: control.text
+            color: control.danger ? criticalText : textMuted
+            horizontalAlignment: Text.AlignHCenter
+            verticalAlignment: Text.AlignVCenter
+            font.pixelSize: window.kdeBodyFontPx
+            font.weight: Font.Medium
+        }
+
+    }
+
+    component ActionButton: Button {
+        id: control
+
+        property bool primary: false
+        property bool compact: false
+        property bool warning: false
+
+        hoverEnabled: true
+        leftPadding: compact ? 12 : 16
+        rightPadding: compact ? 12 : 16
+        topPadding: compact ? 7 : 10
+        bottomPadding: compact ? 7 : 10
+
+        background: Rectangle {
+            radius: 4
+            opacity: control.enabled ? 1 : 0.5
+            color: {
+                if (control.primary)
+                    return control.down ? blend(accentBlue, textPrimary, 0.14) : accentBlue;
+
+                if (control.warning)
+                    return control.down ? blend(warningFill, warningText, 0.14) : warningFill;
+
+                return control.down ? blend(cardBackground, textPrimary, 0.08) : (control.hovered ? hoverBackground : cardBackground);
+            }
+            border.width: 1
+            border.color: {
+                if (control.primary)
+                    return accentBlueBorder;
+
+                if (control.warning)
+                    return warningBorder;
+
+                return frameColor;
+            }
+        }
+
+        contentItem: Label {
+            text: control.text
+            horizontalAlignment: Text.AlignHCenter
+            verticalAlignment: Text.AlignVCenter
+            color: control.primary ? textOnAccent : (control.warning ? warningText : textPrimary)
+            font.pixelSize: control.compact ? window.kdeSmallFontPx : window.kdeBodyFontPx
+            font.weight: Font.Medium
+        }
+
+    }
+
+    component AccentCheckBox: CheckBox {
+        id: control
+
+        spacing: 8
+        hoverEnabled: true
+
+        indicator: Rectangle {
+            implicitWidth: 16
+            implicitHeight: 16
+            radius: 3
+            color: control.checked ? accentBlue : "transparent"
+            border.width: 1
+            border.color: control.enabled ? (control.checked ? accentBlueBorder : blend(frameColor, textMuted, 0.35)) : frameColor
+
+            Label {
+                anchors.centerIn: parent
+                visible: control.checked
+                text: "\u2713"
+                color: textOnAccent
+                font.pixelSize: 11
+                font.weight: Font.DemiBold
+            }
+
+        }
+
+        contentItem: Label {
+            text: control.text
+            leftPadding: control.indicator.width + control.spacing
+            verticalAlignment: Text.AlignVCenter
+            elide: Text.ElideRight
+            color: control.enabled ? textPrimary : textFaint
+            font.pixelSize: window.kdeBodyFontPx
+        }
+
+    }
+
+    component AccentSpinBox: SpinBox {
+        id: control
+
+        implicitWidth: 88
+        implicitHeight: 32
+        editable: false
+
+        contentItem: TextInput {
+            text: control.displayText
+            readOnly: true
+            horizontalAlignment: Text.AlignHCenter
+            verticalAlignment: Text.AlignVCenter
+            color: textPrimary
+            font.pixelSize: window.kdeBodyFontPx
+            selectedTextColor: textPrimary
+            selectionColor: accentBlueSoft
+        }
+
+        up.indicator: Rectangle {
+            implicitWidth: 24
+            implicitHeight: 30
+            x: control.width - width - 1
+            y: 1
+            radius: 4
+            color: control.up.pressed ? hoverBackground : "transparent"
+
+            Label {
+                anchors.centerIn: parent
+                text: "+"
+                color: textMuted
+                font.pixelSize: window.kdeUiFontPx
+                font.weight: Font.DemiBold
+            }
+
+        }
+
+        down.indicator: Rectangle {
+            implicitWidth: 24
+            implicitHeight: 30
+            x: 1
+            y: 1
+            radius: 4
+            color: control.down.pressed ? hoverBackground : "transparent"
+
+            Label {
+                anchors.centerIn: parent
+                text: "-"
+                color: textMuted
+                font.pixelSize: window.kdeSectionFontPx
+                font.weight: Font.DemiBold
+            }
+
+        }
+
+        background: Rectangle {
+            radius: 4
+            color: titlebarBackground
+            border.width: 1
+            border.color: frameColor
+        }
+
+    }
+
+    component MetaChip: Rectangle {
+        id: chip
+
+        property string label: ""
+        property color fillColor: surfaceBackground
+        property color strokeColor: frameColor
+        property color labelColor: textMuted
+
+        implicitHeight: 20
+        implicitWidth: chipLabel.implicitWidth + 14
+        radius: 10
+        color: fillColor
+        border.width: 1
+        border.color: strokeColor
+
+        Label {
+            id: chipLabel
+
+            anchors.centerIn: parent
+            text: chip.label
+            color: chip.labelColor
+            font.pixelSize: window.kdeTinyFontPx
+            font.weight: Font.DemiBold
+        }
+
+    }
+
+    background: Rectangle {
+        color: outerBackground
+    }
+
 }

@@ -18,6 +18,8 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use url::Url;
 
+use crate::kwallet;
+
 const GOOGLE_DRIVE_FILES_URL: &str = "https://www.googleapis.com/drive/v3/files";
 const GOOGLE_DRIVE_UPLOAD_URL: &str = "https://www.googleapis.com/upload/drive/v3/files";
 const GOOGLE_TOKEN_URL: &str = "https://oauth2.googleapis.com/token";
@@ -26,8 +28,6 @@ const GOOGLE_FOLDER_MIME_TYPE: &str = "application/vnd.google-apps.folder";
 const BACKUP_ROOT_FOLDER_NAME: &str = "Backup";
 const BACKUP_ZEN_FOLDER_NAME: &str = "Zen";
 const GOOGLE_DRIVE_SCOPE: &str = "https://www.googleapis.com/auth/drive";
-const GOOGLE_OAUTH_CONFIG_FILE: &str = "google.json";
-
 #[derive(Debug, Clone)]
 pub struct GoogleDriveSyncSettings {
     pub refresh_token: String,
@@ -38,14 +38,6 @@ pub struct GoogleDriveSyncSettings {
 pub struct GoogleOauthClient {
     pub client_id: String,
     pub client_secret: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct GoogleOauthClientFile {
-    #[serde(rename = "google_client_id")]
-    client_id: String,
-    #[serde(rename = "google_client_secret")]
-    client_secret: String,
 }
 
 #[derive(Debug, Clone)]
@@ -115,14 +107,19 @@ pub fn oauth_client_configured() -> bool {
     oauth_client().is_ok()
 }
 
+pub fn store_oauth_client(client_id: &str, client_secret: &str) -> Result<()> {
+    kwallet::store_google_oauth_client(client_id, client_secret)
+}
+
 pub fn authorize_with_browser() -> Result<String> {
     let oauth_client = oauth_client()?;
     let client = Client::builder()
-        .user_agent("zen-session-restore/0.5.0")
+        .user_agent("zen-session-restore/0.5.3")
         .build()
         .context("failed to create Google OAuth client")?;
 
-    let listener = TcpListener::bind("127.0.0.1:0").context("failed to bind local OAuth callback port")?;
+    let listener =
+        TcpListener::bind("127.0.0.1:0").context("failed to bind local OAuth callback port")?;
     listener
         .set_nonblocking(true)
         .context("failed to configure OAuth callback listener")?;
@@ -184,7 +181,10 @@ pub fn sync_backup_folder(
     validate_settings(settings)?;
 
     if !local_backup_dir.is_dir() {
-        bail!("backup folder {} does not exist", local_backup_dir.display());
+        bail!(
+            "backup folder {} does not exist",
+            local_backup_dir.display()
+        );
     }
 
     on_progress(GoogleDriveSyncProgress {
@@ -203,7 +203,7 @@ pub fn sync_backup_folder(
     });
     let local_files = collect_local_files(local_backup_dir)?;
     let client = Client::builder()
-        .user_agent("zen-session-restore/0.5.0")
+        .user_agent("zen-session-restore/0.5.3")
         .build()
         .context("failed to create Google Drive client")?;
     on_progress(GoogleDriveSyncProgress {
@@ -229,7 +229,10 @@ pub fn sync_backup_folder(
     let remote_files = list_child_files(&client, &access_token, &zen_folder_id)?;
     let remote_by_name = remote_files
         .into_iter()
-        .filter(|file| !file.trashed.unwrap_or(false) && file.mime_type.as_deref() != Some(GOOGLE_FOLDER_MIME_TYPE))
+        .filter(|file| {
+            !file.trashed.unwrap_or(false)
+                && file.mime_type.as_deref() != Some(GOOGLE_FOLDER_MIME_TYPE)
+        })
         .map(|file| (file.name.clone(), file))
         .collect::<HashMap<_, _>>();
 
@@ -260,7 +263,9 @@ pub fn sync_backup_folder(
                 &access_token,
                 &zen_folder_id,
                 local_file,
-                remote_by_name.get(&local_file.name).map(|file| file.id.as_str()),
+                remote_by_name
+                    .get(&local_file.name)
+                    .map(|file| file.id.as_str()),
             )?;
             uploaded_files += 1;
         }
@@ -393,7 +398,11 @@ fn ensure_folder(
         .id)
 }
 
-fn list_child_files(client: &Client, access_token: &str, parent_id: &str) -> Result<Vec<DriveFile>> {
+fn list_child_files(
+    client: &Client,
+    access_token: &str,
+    parent_id: &str,
+) -> Result<Vec<DriveFile>> {
     let query = format!("'{}' in parents and trashed = false", parent_id);
     let response = client
         .get(GOOGLE_DRIVE_FILES_URL)
@@ -427,7 +436,8 @@ fn remote_needs_update(remote: &DriveFile, local: &LocalFileState) -> Result<boo
     }
 
     let local_md5 = md5::compute(
-        fs::read(&local.path).with_context(|| format!("failed to read {}", local.path.display()))?,
+        fs::read(&local.path)
+            .with_context(|| format!("failed to read {}", local.path.display()))?,
     );
     let local_md5_hex = format!("{:x}", local_md5);
     Ok(remote.md5_checksum.as_deref() != Some(local_md5_hex.as_str()))
@@ -448,8 +458,8 @@ fn upload_file(
             "parents": [folder_id],
         }))?
     };
-    let file_bytes =
-        fs::read(&local.path).with_context(|| format!("failed to read {}", local.path.display()))?;
+    let file_bytes = fs::read(&local.path)
+        .with_context(|| format!("failed to read {}", local.path.display()))?;
 
     let form = multipart::Form::new()
         .part(
@@ -575,52 +585,17 @@ fn ensure_success(
 }
 
 fn oauth_client() -> Result<GoogleOauthClient> {
-    let config_path = google_oauth_config_path()?;
-    let config_contents = fs::read_to_string(&config_path)
-        .with_context(|| format!("failed to read {}", config_path.display()))?;
-    let config = serde_json::from_str::<GoogleOauthClientFile>(&config_contents).with_context(|| {
-        format!(
-            "failed to parse {} as JSON with google_client_id and google_client_secret",
-            config_path.display()
-        )
-    })?;
+    if let Some(config) = kwallet::load_google_oauth_client()? {
+        if config.client_id.trim().is_empty() || config.client_secret.trim().is_empty() {
+            bail!("KDE Wallet contains empty Google OAuth credentials");
+        }
 
-    if config.client_id.trim().is_empty() || config.client_secret.trim().is_empty() {
-        bail!(
-            "{} must include non-empty google_client_id and google_client_secret values",
-            config_path.display()
-        );
+        return Ok(GoogleOauthClient {
+            client_id: config.client_id,
+            client_secret: config.client_secret,
+        });
     }
-
-    Ok(GoogleOauthClient {
-        client_id: config.client_id,
-        client_secret: config.client_secret,
-    })
-}
-
-fn google_oauth_config_path() -> Result<PathBuf> {
-    let executable_dir = std::env::current_exe()
-        .context("failed to locate the app executable")?
-        .parent()
-        .map(Path::to_path_buf)
-        .ok_or_else(|| anyhow::anyhow!("failed to determine the app folder"))?;
-    let executable_config_path = executable_dir.join(GOOGLE_OAUTH_CONFIG_FILE);
-    if executable_config_path.is_file() {
-        return Ok(executable_config_path);
-    }
-
-    let working_dir_config_path = std::env::current_dir()
-        .context("failed to read the current working directory")?
-        .join(GOOGLE_OAUTH_CONFIG_FILE);
-    if working_dir_config_path.is_file() {
-        return Ok(working_dir_config_path);
-    }
-
-    bail!(
-        "missing {}. Put it next to the app executable at {}",
-        GOOGLE_OAUTH_CONFIG_FILE,
-        executable_config_path.display()
-    )
+    bail!("Google OAuth credentials are not stored in KDE Wallet yet")
 }
 
 fn random_url_safe(len: usize) -> String {
@@ -638,10 +613,7 @@ fn open_browser(url: &str) -> Result<()> {
     let commands = if cfg!(target_os = "macos") {
         vec![("open", vec![url])]
     } else {
-        vec![
-            ("xdg-open", vec![url]),
-            ("gio", vec!["open", url]),
-        ]
+        vec![("xdg-open", vec![url]), ("gio", vec!["open", url])]
     };
 
     for (program, args) in commands {
@@ -653,7 +625,11 @@ fn open_browser(url: &str) -> Result<()> {
     bail!("failed to open a browser automatically")
 }
 
-fn wait_for_oauth_code(listener: TcpListener, expected_state: &str, timeout: Duration) -> Result<String> {
+fn wait_for_oauth_code(
+    listener: TcpListener,
+    expected_state: &str,
+    timeout: Duration,
+) -> Result<String> {
     let deadline = SystemTime::now()
         .checked_add(timeout)
         .ok_or_else(|| anyhow::anyhow!("OAuth timeout overflowed"))?;
@@ -662,7 +638,9 @@ fn wait_for_oauth_code(listener: TcpListener, expected_state: &str, timeout: Dur
         match listener.accept() {
             Ok((mut stream, _)) => {
                 let mut buffer = [0u8; 4096];
-                let bytes_read = stream.read(&mut buffer).context("failed to read OAuth callback")?;
+                let bytes_read = stream
+                    .read(&mut buffer)
+                    .context("failed to read OAuth callback")?;
                 let request = String::from_utf8_lossy(&buffer[..bytes_read]);
                 let request_line = request.lines().next().unwrap_or_default();
                 let path = request_line

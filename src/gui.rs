@@ -1,7 +1,6 @@
 use std::{
     cell::RefCell,
-    env,
-    fs,
+    env, fs,
     path::{Path, PathBuf},
     rc::Rc,
     thread,
@@ -144,31 +143,76 @@ struct AppBridge {
     retention_months_changed: qt_signal!(),
     show_about_on_startup: qt_property!(bool; NOTIFY show_about_on_startup_changed),
     show_about_on_startup_changed: qt_signal!(),
-    refresh: qt_method!(fn refresh(&mut self) { self.do_refresh(); }),
-    select_backup: qt_method!(fn select_backup(&mut self, index: i32) { self.do_select_backup(index); }),
-    toggle_collection: qt_method!(fn toggle_collection(&mut self, collection_index: i32, selected: bool) {
-        self.do_toggle_collection(collection_index, selected);
-    }),
-    toggle_tab: qt_method!(fn toggle_tab(&mut self, collection_index: i32, tab_index: i32, selected: bool) {
-        self.do_toggle_tab(collection_index, tab_index, selected);
-    }),
-    set_launch_after_restore: qt_method!(fn set_launch_after_restore(&mut self, value: bool) {
-        self.do_set_launch_after_restore(value);
-    }),
-    set_cloud_sync_enabled: qt_method!(fn set_cloud_sync_enabled(&mut self, value: bool) {
-        self.do_set_cloud_sync_enabled(value);
-    }),
-    connect_google_drive: qt_method!(fn connect_google_drive(&mut self) { self.do_connect_google_drive(); }),
-    disconnect_google_drive: qt_method!(fn disconnect_google_drive(&mut self) { self.do_disconnect_google_drive(); }),
-    set_retention_months: qt_method!(fn set_retention_months(&mut self, value: i32) {
-        self.do_set_retention_months(value);
-    }),
-    sync_cloud_backup: qt_method!(fn sync_cloud_backup(&mut self) { self.do_sync_cloud_backup(); }),
-    set_profile_path: qt_method!(fn set_profile_path(&mut self, profile_path: QString) {
-        self.do_set_profile_path(profile_path);
-    }),
-    restore_full_backup: qt_method!(fn restore_full_backup(&mut self) { self.do_restore_full_backup(); }),
-    restore_selected: qt_method!(fn restore_selected(&mut self) { self.do_restore_selected(); }),
+    refresh: qt_method!(
+        fn refresh(&mut self) {
+            self.do_refresh();
+        }
+    ),
+    select_backup: qt_method!(
+        fn select_backup(&mut self, index: i32) {
+            self.do_select_backup(index);
+        }
+    ),
+    toggle_collection: qt_method!(
+        fn toggle_collection(&mut self, collection_index: i32, selected: bool) {
+            self.do_toggle_collection(collection_index, selected);
+        }
+    ),
+    toggle_tab: qt_method!(
+        fn toggle_tab(&mut self, collection_index: i32, tab_index: i32, selected: bool) {
+            self.do_toggle_tab(collection_index, tab_index, selected);
+        }
+    ),
+    set_launch_after_restore: qt_method!(
+        fn set_launch_after_restore(&mut self, value: bool) {
+            self.do_set_launch_after_restore(value);
+        }
+    ),
+    set_cloud_sync_enabled: qt_method!(
+        fn set_cloud_sync_enabled(&mut self, value: bool) {
+            self.do_set_cloud_sync_enabled(value);
+        }
+    ),
+    save_google_oauth_credentials: qt_method!(
+        fn save_google_oauth_credentials(&mut self, client_id: QString, client_secret: QString) {
+            self.do_save_google_oauth_credentials(client_id, client_secret);
+        }
+    ),
+    connect_google_drive: qt_method!(
+        fn connect_google_drive(&mut self) {
+            self.do_connect_google_drive();
+        }
+    ),
+    disconnect_google_drive: qt_method!(
+        fn disconnect_google_drive(&mut self) {
+            self.do_disconnect_google_drive();
+        }
+    ),
+    set_retention_months: qt_method!(
+        fn set_retention_months(&mut self, value: i32) {
+            self.do_set_retention_months(value);
+        }
+    ),
+    sync_cloud_backup: qt_method!(
+        fn sync_cloud_backup(&mut self) {
+            self.do_sync_cloud_backup();
+        }
+    ),
+    set_profile_path: qt_method!(
+        fn set_profile_path(&mut self, profile_path: QString) {
+            self.do_set_profile_path(profile_path);
+        }
+    ),
+    restore_full_backup: qt_method!(
+        fn restore_full_backup(&mut self) {
+            self.do_restore_full_backup();
+        }
+    ),
+    restore_selected: qt_method!(
+        fn restore_selected(&mut self) {
+            self.do_restore_selected();
+        }
+    ),
     state: Rc<RefCell<GuiState>>,
 }
 
@@ -192,7 +236,9 @@ impl Default for AppBridge {
             launch_after_restore_changed: Default::default(),
             cloud_sync_enabled: false,
             cloud_sync_enabled_changed: Default::default(),
-            cloud_sync_status_text: QString::from("Cloud sync is off. Enable it to mirror zen-sessions-backup to Google Drive."),
+            cloud_sync_status_text: QString::from(
+                "Cloud sync is off. Enable it to mirror zen-sessions-backup to Google Drive.",
+            ),
             cloud_sync_status_text_changed: Default::default(),
             cloud_sync_in_progress: false,
             cloud_sync_in_progress_changed: Default::default(),
@@ -216,6 +262,7 @@ impl Default for AppBridge {
             toggle_tab: Default::default(),
             set_launch_after_restore: Default::default(),
             set_cloud_sync_enabled: Default::default(),
+            save_google_oauth_credentials: Default::default(),
             connect_google_drive: Default::default(),
             disconnect_google_drive: Default::default(),
             set_retention_months: Default::default(),
@@ -234,7 +281,8 @@ impl AppBridge {
             let mut state = self.state.borrow_mut();
             state.cloud_sync_enabled = config.cloud_sync_enabled;
             state.google_refresh_token = config.google_refresh_token;
-            state.retention_months = google_drive::clamp_retention_months(i32::from(config.retention_months));
+            state.retention_months =
+                google_drive::clamp_retention_months(i32::from(config.retention_months));
         }
 
         self.publish_cloud_sync_preferences();
@@ -258,7 +306,9 @@ impl AppBridge {
         if profile.as_os_str().is_empty() {
             self.clear_loaded_profile();
             self.set_should_prompt_for_profile(true);
-            self.set_status("Could not find a Zen profile. Start the app with ZEN_PROFILE or --profile.");
+            self.set_status(
+                "Could not find a Zen profile. Start the app with ZEN_PROFILE or --profile.",
+            );
             return Ok(());
         }
 
@@ -299,7 +349,10 @@ impl AppBridge {
 
     fn do_toggle_collection(&mut self, collection_index: i32, selected: bool) {
         let mut state = self.state.borrow_mut();
-        let Some(backup) = state.active_backup.and_then(|index| state.backups.get_mut(index)) else {
+        let Some(backup) = state
+            .active_backup
+            .and_then(|index| state.backups.get_mut(index))
+        else {
             return;
         };
         let Some(collection) = backup.collections.get_mut(collection_index as usize) else {
@@ -316,7 +369,10 @@ impl AppBridge {
 
     fn do_toggle_tab(&mut self, collection_index: i32, tab_index: i32, selected: bool) {
         let mut state = self.state.borrow_mut();
-        let Some(backup) = state.active_backup.and_then(|index| state.backups.get_mut(index)) else {
+        let Some(backup) = state
+            .active_backup
+            .and_then(|index| state.backups.get_mut(index))
+        else {
             return;
         };
         let Some(collection) = backup.collections.get_mut(collection_index as usize) else {
@@ -343,7 +399,24 @@ impl AppBridge {
         self.publish_cloud_sync_preferences();
         self.update_cloud_sync_status();
         if let Err(error) = self.save_config() {
-            self.set_status(format!("Saved sync preference in memory, but could not persist it: {error}"));
+            self.set_status(format!(
+                "Saved sync preference in memory, but could not persist it: {error}"
+            ));
+        }
+    }
+
+    fn do_save_google_oauth_credentials(&mut self, client_id: QString, client_secret: QString) {
+        let client_id = client_id.to_string();
+        let client_secret = client_secret.to_string();
+        match google_drive::store_oauth_client(&client_id, &client_secret) {
+            Ok(()) => {
+                self.publish_cloud_sync_preferences();
+                self.update_cloud_sync_status();
+                self.set_status("Saved Google OAuth credentials in KDE Wallet.");
+            }
+            Err(error) => {
+                self.set_status(format!("Could not save Google OAuth credentials: {error}"))
+            }
         }
     }
 
@@ -354,7 +427,9 @@ impl AppBridge {
                 self.publish_cloud_sync_preferences();
                 self.update_cloud_sync_status();
                 if let Err(error) = self.save_config() {
-                    self.set_status(format!("Connected Google Drive, but could not persist the refresh token: {error}"));
+                    self.set_status(format!(
+                        "Connected Google Drive, but could not persist the refresh token: {error}"
+                    ));
                 } else {
                     self.set_status("Connected Google Drive. Backup sync is ready.");
                 }
@@ -368,7 +443,9 @@ impl AppBridge {
         self.publish_cloud_sync_preferences();
         self.update_cloud_sync_status();
         if let Err(error) = self.save_config() {
-            self.set_status(format!("Disconnected Google Drive in memory, but could not persist it: {error}"));
+            self.set_status(format!(
+                "Disconnected Google Drive in memory, but could not persist it: {error}"
+            ));
         } else {
             self.set_status("Disconnected Google Drive.");
         }
@@ -379,7 +456,9 @@ impl AppBridge {
         self.publish_cloud_sync_preferences();
         self.update_cloud_sync_status();
         if let Err(error) = self.save_config() {
-            self.set_status(format!("Updated retention, but could not persist it: {error}"));
+            self.set_status(format!(
+                "Updated retention, but could not persist it: {error}"
+            ));
         }
     }
 
@@ -436,19 +515,20 @@ impl AppBridge {
         });
 
         thread::spawn(move || {
-            let sync_result = google_drive::sync_backup_folder(&backup_dir, &settings, |progress| {
-                dispatch(SyncUiEvent::Progress {
-                    current: progress.current_step as i32,
-                    total: progress.total_steps as i32,
-                    message: progress.message,
-                });
-            })
-            .map(|summary| SyncUiSuccess {
-                backup_dir,
-                summary,
-                retention_months: settings.retention_months,
-            })
-            .map_err(|error| error.to_string());
+            let sync_result =
+                google_drive::sync_backup_folder(&backup_dir, &settings, |progress| {
+                    dispatch(SyncUiEvent::Progress {
+                        current: progress.current_step as i32,
+                        total: progress.total_steps as i32,
+                        message: progress.message,
+                    });
+                })
+                .map(|summary| SyncUiSuccess {
+                    backup_dir,
+                    summary,
+                    retention_months: settings.retention_months,
+                })
+                .map_err(|error| error.to_string());
 
             dispatch(SyncUiEvent::Finished(sync_result));
         });
@@ -509,7 +589,10 @@ impl AppBridge {
         }
 
         if !backup_dir.is_dir() {
-            bail!("the backup folder {} does not exist yet", backup_dir.display());
+            bail!(
+                "the backup folder {} does not exist yet",
+                backup_dir.display()
+            );
         }
 
         Ok((backup_dir, settings))
@@ -548,11 +631,13 @@ impl AppBridge {
             return Ok(());
         }
 
-        let (_profile, backup, launch_after_restore, executable) = self.current_restore_context()?;
+        let (_profile, backup, launch_after_restore, executable) =
+            self.current_restore_context()?;
         let destination = zen::copy_backup_to_main_session(&backup.inner, &profile)?;
 
         if launch_after_restore {
-            zen::launch_zen(executable.as_deref()).context("restore succeeded but launching Zen failed")?;
+            zen::launch_zen(executable.as_deref())
+                .context("restore succeeded but launching Zen failed")?;
         }
 
         self.update_zen_running();
@@ -585,7 +670,8 @@ impl AppBridge {
             return Ok(());
         }
 
-        let (_profile, backup, launch_after_restore, executable) = self.current_restore_context()?;
+        let (_profile, backup, launch_after_restore, executable) =
+            self.current_restore_context()?;
         let selections = backup
             .collections
             .iter()
@@ -672,9 +758,8 @@ impl AppBridge {
                 })
             })
             .collect::<Vec<_>>();
-        self.backups_json = QString::from(
-            serde_json::to_string(&data).unwrap_or_else(|_| "[]".to_owned()),
-        );
+        self.backups_json =
+            QString::from(serde_json::to_string(&data).unwrap_or_else(|_| "[]".to_owned()));
         self.backups_json_changed();
     }
 
@@ -686,9 +771,8 @@ impl AppBridge {
             .map(BackupState::to_json)
             .unwrap_or_else(|| json!({}));
 
-        self.active_backup_json = QString::from(
-            serde_json::to_string(&payload).unwrap_or_else(|_| "{}".to_owned()),
-        );
+        self.active_backup_json =
+            QString::from(serde_json::to_string(&payload).unwrap_or_else(|_| "{}".to_owned()));
         self.active_backup_json_changed();
     }
 
@@ -770,7 +854,8 @@ impl AppBridge {
         }
 
         let contents = serde_json::to_vec_pretty(&config)?;
-        fs::write(&path, contents).with_context(|| format!("could not write {}", path.display()))?;
+        fs::write(&path, contents)
+            .with_context(|| format!("could not write {}", path.display()))?;
         Ok(())
     }
 }
@@ -866,7 +951,9 @@ pub fn run(profile: Option<PathBuf>, show_about_on_startup: bool) -> Result<()> 
     bridge.publish_cloud_sync_preferences();
     match load_config() {
         Ok(config) => bridge.apply_config(config),
-        Err(error) => bridge.set_status(format!("Loaded backups, but could not read saved sync preferences: {error}")),
+        Err(error) => bridge.set_status(format!(
+            "Loaded backups, but could not read saved sync preferences: {error}"
+        )),
     }
     bridge.do_refresh();
     let bridge = QObjectBox::new(bridge);
@@ -883,7 +970,7 @@ fn configure_application(icon_path: &Path, desktop_file_name: Option<&str>) {
     ] {
         QGuiApplication::setWindowIcon(QIcon(icon_path));
         QCoreApplication::setApplicationName(QStringLiteral("Restore Zen Session"));
-        QCoreApplication::setApplicationVersion(QStringLiteral("0.5.0"));
+        QCoreApplication::setApplicationVersion(QStringLiteral("0.5.3"));
         QCoreApplication::setOrganizationName(QStringLiteral("Pete Vagiakos"));
     });
 
@@ -935,7 +1022,10 @@ fn desktop_file_exists() -> bool {
 
     if let Some(data_dirs) = env::var_os("XDG_DATA_DIRS") {
         for dir in env::split_paths(&data_dirs) {
-            if dir.join("applications/restore-zen-session.desktop").is_file() {
+            if dir
+                .join("applications/restore-zen-session.desktop")
+                .is_file()
+            {
                 return true;
             }
         }
@@ -946,7 +1036,10 @@ fn desktop_file_exists() -> bool {
         PathBuf::from("/usr/share"),
     ];
     for dir in fallback_dirs {
-        if dir.join("applications/restore-zen-session.desktop").is_file() {
+        if dir
+            .join("applications/restore-zen-session.desktop")
+            .is_file()
+        {
             return true;
         }
     }
@@ -962,7 +1055,8 @@ fn cloud_sync_status_summary(
     retention_months: u8,
 ) -> String {
     if !enabled {
-        return "Cloud sync is off. Enable it to mirror zen-sessions-backup to Google Drive.".to_owned();
+        return "Cloud sync is off. Enable it to mirror zen-sessions-backup to Google Drive."
+            .to_owned();
     }
 
     let Some(profile) = profile else {
@@ -970,7 +1064,7 @@ fn cloud_sync_status_summary(
     };
 
     if !oauth_ready {
-        return "Google OAuth is not configured for this app yet.".to_owned();
+        return "Google OAuth credentials are not configured yet. Save them in KDE Wallet to enable sign-in.".to_owned();
     }
 
     if !has_refresh_token {
@@ -1001,8 +1095,8 @@ fn load_config() -> Result<AppConfig> {
     }
 
     let bytes = fs::read(&path).with_context(|| format!("could not read {}", path.display()))?;
-    let config =
-        serde_json::from_slice::<AppConfig>(&bytes).with_context(|| format!("could not parse {}", path.display()))?;
+    let config = serde_json::from_slice::<AppConfig>(&bytes)
+        .with_context(|| format!("could not parse {}", path.display()))?;
     Ok(AppConfig {
         cloud_sync_enabled: config.cloud_sync_enabled,
         google_refresh_token: config.google_refresh_token,

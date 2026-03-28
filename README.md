@@ -52,7 +52,7 @@ The GUI lets you:
 - choose a retention window from 1 to 12 months before sync
 - open an About dialog with version, author, repository, and issue-reporting links
 
-Google Drive sync requires a local `google.json` file with your own OAuth desktop client credentials. The file is not included in the repository and must sit next to the app executable. If you are running with `cargo run`, placing `google.json` in the project root also works during development. If the file is missing, the Cloud Sync sidebar stays disabled and the app points users back to this README.
+Google Drive sync stores the Google OAuth desktop client credentials in KDE Wallet. When the user presses `Connect Google Drive` without stored credentials, the GUI prompts for the Google Client ID and Google Client Secret, saves them into KDE Wallet, and then starts the browser sign-in flow.
 
 For Linux desktop integration, the repository now also includes [`assets/restore-zen-session.desktop`](assets/restore-zen-session.desktop), including an `About Restore Zen Session...` desktop action. Install or reference that desktop file from your launcher if you want the panel or dock context menu to expose the About action. The GUI only advertises that desktop file to Qt when it can actually find a matching `restore-zen-session.desktop` on disk, which avoids host portal registration errors for standalone release binaries.
 
@@ -138,27 +138,11 @@ This tool operates directly on local session backup files. It is not a browser e
 
 The GUI now includes a Google Drive sync panel for `zen-sessions-backup`. Sync creates or reuses `Backup/Zen` in Google Drive, mirrors the local backup folder into it, deletes remote files that no longer exist locally, and prunes local backups older than the selected 1-12 month retention window before syncing.
 
-The current Google integration opens the user's browser for OAuth sign-in and stores the resulting refresh token in the local app settings file under the user's config directory.
+The current Google integration opens the user's browser for OAuth sign-in, stores the Google Client ID and Google Client Secret in KDE Wallet, and keeps the resulting refresh token in the local app settings file under the user's config directory.
 
-To enable Google Drive sync, create a `google.json` file with your own Google OAuth Desktop credentials.
+To enable Google Drive sync, create your own Google OAuth desktop client in Google Cloud and enter the credentials when the GUI asks for them.
 
-File location:
-
-- place `google.json` in the same folder as the app executable
-- for local development with `cargo run`, placing `google.json` in the repository root also works
-- do not commit this file to GitHub
-- if the file is missing, all Cloud Sync controls remain disabled in the sidebar
-
-File format:
-
-```json
-{
-  "google_client_id": "your-google-oauth-client-id.apps.googleusercontent.com",
-  "google_client_secret": "your-google-oauth-client-secret"
-}
-```
-
-You need to create your own Google OAuth client in Google Cloud and use those values in `google.json`. Without that file, the GUI disables Google Drive sign-in.
+If KDE Wallet is unavailable, locked, or not configured, the GUI save step reports the error in the status bar.
 
 GitHub README link for users:
 
