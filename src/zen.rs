@@ -67,25 +67,66 @@ pub struct CollectionSelection {
     pub selected_tab_indices: BTreeSet<usize>,
 }
 
-pub fn detect_default_profile() -> Result<PathBuf> {
-    let home = dirs::home_dir().ok_or_else(|| anyhow!("could not determine home directory"))?;
-    let zen_root = home.join(".zen");
-    let entries = fs::read_dir(&zen_root)
-        .with_context(|| format!("failed to read {}", zen_root.display()))?;
+pub fn resolve_profile_path(path: &Path) -> Result<PathBuf> {
+    if !path.is_dir() {
+        bail!("{} is not a directory", path.display());
+    }
 
-    let mut candidates = Vec::new();
+    if profile_backup_dir(path).is_dir() {
+        return Ok(path.to_path_buf());
+    }
+
+    let mut matches = Vec::new();
+    let entries =
+        fs::read_dir(path).with_context(|| format!("failed to read {}", path.display()))?;
     for entry in entries {
         let entry = entry?;
-        let path = entry.path();
-        if !path.is_dir() {
+        let candidate = entry.path();
+        if candidate.is_dir() && profile_backup_dir(&candidate).is_dir() {
+            matches.push(candidate);
+        }
+    }
+
+    match matches.len() {
+        1 => Ok(matches.remove(0)),
+        0 => bail!(
+            "{} does not look like a Zen profile and does not contain one",
+            path.display()
+        ),
+        _ => bail!(
+            "{} contains multiple Zen profiles; choose the exact profile folder",
+            path.display()
+        ),
+    }
+}
+
+pub fn detect_default_profile() -> Result<PathBuf> {
+    let home = dirs::home_dir().ok_or_else(|| anyhow!("could not determine home directory"))?;
+    let mut candidates = Vec::new();
+    let mut scanned_roots = Vec::new();
+
+    for zen_root in [home.join(".zen"), home.join(".config/zen")] {
+        if !zen_root.is_dir() {
             continue;
         }
-        if path.join("zen-sessions-backup").is_dir() {
-            let modified = entry
-                .metadata()
-                .and_then(|metadata| metadata.modified())
-                .ok();
-            candidates.push((modified, path));
+
+        scanned_roots.push(zen_root.display().to_string());
+        let entries = fs::read_dir(&zen_root)
+            .with_context(|| format!("failed to read {}", zen_root.display()))?;
+
+        for entry in entries {
+            let entry = entry?;
+            let path = entry.path();
+            if !path.is_dir() {
+                continue;
+            }
+            if path.join("zen-sessions-backup").is_dir() {
+                let modified = entry
+                    .metadata()
+                    .and_then(|metadata| metadata.modified())
+                    .ok();
+                candidates.push((modified, path));
+            }
         }
     }
 
@@ -94,7 +135,14 @@ pub fn detect_default_profile() -> Result<PathBuf> {
         .into_iter()
         .map(|(_, path)| path)
         .next()
-        .ok_or_else(|| anyhow!("could not find a Zen profile under {}", zen_root.display()))
+        .ok_or_else(|| {
+            let searched = if scanned_roots.is_empty() {
+                format!("{}/.zen or {}/.config/zen", home.display(), home.display())
+            } else {
+                scanned_roots.join(" or ")
+            };
+            anyhow!("could not find a Zen profile under {}", searched)
+        })
 }
 
 pub fn profile_backup_dir(profile_dir: &Path) -> PathBuf {
@@ -609,7 +657,9 @@ fn snapshot_label(file_name: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::parse_snapshot_key;
+    use std::fs;
+
+    use super::{parse_snapshot_key, resolve_profile_path};
 
     #[test]
     fn parses_snapshot_key() {
@@ -617,5 +667,24 @@ mod tests {
             parse_snapshot_key("zen-sessions-2026-03-18-15.jsonlz4"),
             (2026, 3, 18, 15)
         );
+    }
+
+    #[test]
+    fn resolves_profile_from_parent_directory() {
+        let root = std::env::temp_dir().join(format!(
+            "zen-session-restore-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("time went backwards")
+                .as_nanos()
+        ));
+        let profile = root.join("profile");
+        fs::create_dir_all(profile.join("zen-sessions-backup")).expect("create test profile");
+
+        let resolved = resolve_profile_path(&root).expect("resolve profile");
+        assert_eq!(resolved, profile);
+
+        fs::remove_dir_all(&root).expect("cleanup test profile");
     }
 }

@@ -606,8 +606,17 @@ impl AppBridge {
             return;
         }
 
-        self.state.borrow_mut().profile = Some(PathBuf::from(profile_path));
-        self.do_refresh();
+        match zen::resolve_profile_path(Path::new(&profile_path)) {
+            Ok(profile) => {
+                self.state.borrow_mut().profile = Some(profile);
+                self.do_refresh();
+            }
+            Err(error) => {
+                self.clear_loaded_profile();
+                self.set_should_prompt_for_profile(true);
+                self.set_status(format!("Could not use that folder as a Zen profile: {error}"));
+            }
+        }
     }
 
     fn do_restore_full_backup(&mut self) {

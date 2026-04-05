@@ -10,6 +10,7 @@ It reads Zen backup snapshots from `zen-sessions-backup`, decodes Mozilla `.json
 ## What The Application Does
 
 The app is built around the Zen profile directory, usually under `~/.zen/<profile>`.
+You can also point it at any folder path manually; if the selected folder is itself a Zen profile, or contains exactly one Zen profile, the app will use it.
 
 It can:
 
@@ -36,7 +37,7 @@ Running the binary without a subcommand starts the Qt desktop interface:
 cargo run -- --profile "/path/to/Zen profile"
 ```
 
-If `--profile` is omitted, the app tries to find a profile automatically under `~/.zen`. If no usable profile is found, the GUI prompts for one.
+If `--profile` is omitted, the app tries to find a profile automatically under `~/.zen` or `~/.config/zen`. If no usable profile is found, the GUI prompts for one.
 
 The GUI lets you:
 

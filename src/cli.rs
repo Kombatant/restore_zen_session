@@ -60,7 +60,7 @@ pub fn run(cli: Cli) -> Result<()> {
 
 fn resolve_profile(profile: Option<PathBuf>) -> Result<PathBuf> {
     if let Some(profile) = profile {
-        return Ok(profile);
+        return zen::resolve_profile_path(&profile);
     }
 
     zen::detect_default_profile().or_else(|_| {
