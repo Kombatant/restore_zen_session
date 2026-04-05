@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use url::Url;
 
-use crate::kwallet;
+use crate::secret_store;
 
 const GOOGLE_DRIVE_FILES_URL: &str = "https://www.googleapis.com/drive/v3/files";
 const GOOGLE_DRIVE_UPLOAD_URL: &str = "https://www.googleapis.com/upload/drive/v3/files";
@@ -108,7 +108,7 @@ pub fn oauth_client_configured() -> bool {
 }
 
 pub fn store_oauth_client(client_id: &str, client_secret: &str) -> Result<()> {
-    kwallet::store_google_oauth_client(client_id, client_secret)
+    secret_store::store_google_oauth_client(client_id, client_secret)
 }
 
 pub fn authorize_with_browser() -> Result<String> {
@@ -585,9 +585,9 @@ fn ensure_success(
 }
 
 fn oauth_client() -> Result<GoogleOauthClient> {
-    if let Some(config) = kwallet::load_google_oauth_client()? {
+    if let Some(config) = secret_store::load_google_oauth_client()? {
         if config.client_id.trim().is_empty() || config.client_secret.trim().is_empty() {
-            bail!("KDE Wallet contains empty Google OAuth credentials");
+            bail!("stored Google OAuth credentials are empty");
         }
 
         return Ok(GoogleOauthClient {
@@ -595,7 +595,7 @@ fn oauth_client() -> Result<GoogleOauthClient> {
             client_secret: config.client_secret,
         });
     }
-    bail!("Google OAuth credentials are not stored in KDE Wallet yet")
+    bail!("Google OAuth credentials are not stored in the desktop keyring yet")
 }
 
 fn random_url_safe(len: usize) -> String {

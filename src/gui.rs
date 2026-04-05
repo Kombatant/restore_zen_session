@@ -614,7 +614,9 @@ impl AppBridge {
             Err(error) => {
                 self.clear_loaded_profile();
                 self.set_should_prompt_for_profile(true);
-                self.set_status(format!("Could not use that folder as a Zen profile: {error}"));
+                self.set_status(format!(
+                    "Could not use that folder as a Zen profile: {error}"
+                ));
             }
         }
     }
