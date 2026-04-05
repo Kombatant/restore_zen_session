@@ -114,7 +114,7 @@ pub fn store_oauth_client(client_id: &str, client_secret: &str) -> Result<()> {
 pub fn authorize_with_browser() -> Result<String> {
     let oauth_client = oauth_client()?;
     let client = Client::builder()
-        .user_agent("zen-session-restore/0.5.3")
+        .user_agent("zen-session-restore/0.5.4")
         .build()
         .context("failed to create Google OAuth client")?;
 
@@ -203,7 +203,7 @@ pub fn sync_backup_folder(
     });
     let local_files = collect_local_files(local_backup_dir)?;
     let client = Client::builder()
-        .user_agent("zen-session-restore/0.5.3")
+        .user_agent("zen-session-restore/0.5.4")
         .build()
         .context("failed to create Google Drive client")?;
     on_progress(GoogleDriveSyncProgress {

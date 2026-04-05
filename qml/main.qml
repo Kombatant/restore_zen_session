@@ -1653,7 +1653,7 @@ ApplicationWindow {
             }
 
             Label {
-                text: "Version 0.5.3"
+                text: "Version 0.5.4"
                 color: palette.windowText
             }
 

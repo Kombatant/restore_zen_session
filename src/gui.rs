@@ -981,7 +981,7 @@ fn configure_application(icon_path: &Path, desktop_file_name: Option<&str>) {
     ] {
         QGuiApplication::setWindowIcon(QIcon(icon_path));
         QCoreApplication::setApplicationName(QStringLiteral("Restore Zen Session"));
-        QCoreApplication::setApplicationVersion(QStringLiteral("0.5.3"));
+        QCoreApplication::setApplicationVersion(QStringLiteral("0.5.4"));
         QCoreApplication::setOrganizationName(QStringLiteral("Pete Vagiakos"));
     });
 

@@ -1953,7 +1953,7 @@ dependencies = [
 
 [[package]]
 name = "zen_session_restore"
-version = "0.5.3"
+version = "0.5.4"
 dependencies = [
  "anyhow",
  "base64",
