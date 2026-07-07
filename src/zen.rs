@@ -153,12 +153,6 @@ pub fn main_session_file(profile_dir: &Path) -> PathBuf {
     profile_dir.join("zen-sessions.jsonlz4")
 }
 
-pub fn is_zen_running() -> bool {
-    let mut system = System::new_all();
-    system.refresh_processes(ProcessesToUpdate::All, true);
-    system.processes().values().any(process_looks_like_zen)
-}
-
 pub fn is_profile_in_use(profile_dir: &Path) -> bool {
     let mut system = System::new_all();
     system.refresh_processes(ProcessesToUpdate::All, true);
@@ -184,18 +178,22 @@ pub fn launch_zen(executable: Option<&Path>) -> Result<()> {
 }
 
 fn process_looks_like_zen(process: &sysinfo::Process) -> bool {
+    fn is_zen_binary_name(name: &str) -> bool {
+        matches!(name, "zen" | "zen-bin" | "zen-browser" | "zen-browser-bin")
+    }
+
     let name = process.name().to_string_lossy().to_ascii_lowercase();
-    let cmdline = process
+    if is_zen_binary_name(&name) {
+        return true;
+    }
+
+    process
         .cmd()
-        .iter()
-        .map(|part| part.to_string_lossy().to_ascii_lowercase())
-        .collect::<Vec<_>>()
-        .join(" ");
-    name == "zen"
-        || name.contains("zen-browser")
-        || cmdline.contains("/zen")
-        || cmdline.contains("zen-bin")
-        || cmdline.contains("zen-browser")
+        .first()
+        .map(Path::new)
+        .and_then(Path::file_name)
+        .map(|file| file.to_string_lossy().to_ascii_lowercase())
+        .is_some_and(|file| is_zen_binary_name(&file))
 }
 
 fn active_profile_lock_pid(profile_dir: &Path) -> Option<u32> {
@@ -229,8 +227,16 @@ pub fn scan_backups(profile_dir: &Path) -> Result<Vec<BackupFile>> {
             continue;
         }
 
-        let (raw_json, summary) = parse_backup_json_and_summary(&path)
-            .with_context(|| format!("failed to parse backup file {}", path.display()))?;
+        let (raw_json, summary) = match parse_backup_json_and_summary(&path) {
+            Ok(parsed) => parsed,
+            Err(error) => {
+                eprintln!(
+                    "warning: skipping unreadable backup file {}: {error:#}",
+                    path.display()
+                );
+                continue;
+            }
+        };
         let sort_key = parse_snapshot_key(&file_name);
         let snapshot_label = snapshot_label(&file_name);
 
@@ -264,8 +270,11 @@ pub fn resolve_backup(profile_dir: &Path, selector: &str) -> Result<BackupFile> 
     }
 
     if let Ok(index) = selector.parse::<usize>() {
-        let Some(backup) = backups.get(index.saturating_sub(1)) else {
-            bail!("backup index {} is out of range", index);
+        let Some(backup) = index
+            .checked_sub(1)
+            .and_then(|zero_based| backups.get(zero_based))
+        else {
+            bail!("backup index {} is out of range (valid: 1-{})", index, backups.len());
         };
         return Ok(backup.clone());
     }
@@ -283,6 +292,7 @@ pub fn resolve_backup(profile_dir: &Path, selector: &str) -> Result<BackupFile> 
 
 pub fn copy_backup_to_main_session(backup: &BackupFile, profile_dir: &Path) -> Result<PathBuf> {
     let destination = main_session_file(profile_dir);
+    backup_existing_session(&destination)?;
     fs::copy(&backup.path, &destination).with_context(|| {
         format!(
             "failed to copy {} to {}",
@@ -301,9 +311,28 @@ pub fn write_filtered_restore(
     let filtered_json = build_filtered_restore_json(backup, selections)?;
     let encoded = write_session_value(&filtered_json)?;
     let destination = main_session_file(profile_dir);
+    backup_existing_session(&destination)?;
     fs::write(&destination, encoded)
         .with_context(|| format!("failed to write {}", destination.display()))?;
     Ok(destination)
+}
+
+fn backup_existing_session(destination: &Path) -> Result<()> {
+    if !destination.is_file() {
+        return Ok(());
+    }
+
+    let mut backup_path = destination.as_os_str().to_owned();
+    backup_path.push(".bak");
+    let backup_path = PathBuf::from(backup_path);
+    fs::copy(destination, &backup_path).with_context(|| {
+        format!(
+            "failed to back up current session {} to {}",
+            destination.display(),
+            backup_path.display()
+        )
+    })?;
+    Ok(())
 }
 
 fn parse_path_as_backup(path: PathBuf) -> Result<BackupFile> {
@@ -658,8 +687,20 @@ fn snapshot_label(file_name: &str) -> String {
 #[cfg(test)]
 mod tests {
     use std::fs;
+    use std::path::PathBuf;
 
-    use super::{parse_snapshot_key, resolve_profile_path};
+    use super::{parse_snapshot_key, resolve_backup, resolve_profile_path, scan_backups};
+
+    fn unique_temp_dir(label: &str) -> PathBuf {
+        std::env::temp_dir().join(format!(
+            "zen-session-restore-test-{label}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("time went backwards")
+                .as_nanos()
+        ))
+    }
 
     #[test]
     fn parses_snapshot_key() {
@@ -671,14 +712,7 @@ mod tests {
 
     #[test]
     fn resolves_profile_from_parent_directory() {
-        let root = std::env::temp_dir().join(format!(
-            "zen-session-restore-test-{}-{}",
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .expect("time went backwards")
-                .as_nanos()
-        ));
+        let root = unique_temp_dir("profile");
         let profile = root.join("profile");
         fs::create_dir_all(profile.join("zen-sessions-backup")).expect("create test profile");
 
@@ -686,5 +720,27 @@ mod tests {
         assert_eq!(resolved, profile);
 
         fs::remove_dir_all(&root).expect("cleanup test profile");
+    }
+
+    #[test]
+    fn rejects_backup_index_zero_and_skips_corrupt_files() {
+        let profile = unique_temp_dir("backups");
+        let backup_dir = profile.join("zen-sessions-backup");
+        fs::create_dir_all(&backup_dir).expect("create backup dir");
+
+        let session = r#"{"windows":[{"tabs":[{"entries":[{"url":"https://example.com","title":"Example"}]}]}]}"#;
+        fs::write(backup_dir.join("zen-sessions-2026-03-18-15.json"), session)
+            .expect("write backup");
+        fs::write(backup_dir.join("zen-sessions-2026-03-18-16.json"), "not json")
+            .expect("write corrupt backup");
+
+        let backups = scan_backups(&profile).expect("scan backups");
+        assert_eq!(backups.len(), 1, "corrupt backup should be skipped");
+
+        assert!(resolve_backup(&profile, "0").is_err());
+        assert!(resolve_backup(&profile, "1").is_ok());
+        assert!(resolve_backup(&profile, "2").is_err());
+
+        fs::remove_dir_all(&profile).expect("cleanup test profile");
     }
 }

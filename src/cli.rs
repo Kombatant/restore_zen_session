@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 use clap::{Args, Parser, Subcommand};
@@ -63,12 +63,12 @@ fn resolve_profile(profile: Option<PathBuf>) -> Result<PathBuf> {
         return zen::resolve_profile_path(&profile);
     }
 
-    zen::detect_default_profile().or_else(|_| {
-        bail!("a Zen profile path is required. Pass --profile <path> or set ZEN_PROFILE")
-    })
+    zen::detect_default_profile().context(
+        "a Zen profile path is required. Pass --profile <path> or set ZEN_PROFILE",
+    )
 }
 
-fn list_backups(profile: &PathBuf) -> Result<()> {
+fn list_backups(profile: &Path) -> Result<()> {
     let backups = zen::scan_backups(profile)?;
     if backups.is_empty() {
         println!(
@@ -100,7 +100,7 @@ fn list_backups(profile: &PathBuf) -> Result<()> {
     Ok(())
 }
 
-fn show_backup(profile: &PathBuf, selector: &str) -> Result<()> {
+fn show_backup(profile: &Path, selector: &str) -> Result<()> {
     let backup = zen::resolve_backup(profile, selector)?;
 
     println!("Backup: {}", backup.file_name);
@@ -145,12 +145,16 @@ fn show_backup(profile: &PathBuf, selector: &str) -> Result<()> {
     Ok(())
 }
 
-fn restore_backup(profile: &PathBuf, args: &RestoreArgs) -> Result<()> {
+fn restore_backup(profile: &Path, args: &RestoreArgs) -> Result<()> {
     if !args.yes {
         bail!(
             "restore will overwrite {}. Re-run with --yes when Zen is fully closed.",
             zen::main_session_file(profile).display()
         );
+    }
+
+    if zen::is_profile_in_use(profile) {
+        bail!("Zen is still using this profile. Close Zen and try again.");
     }
 
     let backup = zen::resolve_backup(profile, &args.backup)?;

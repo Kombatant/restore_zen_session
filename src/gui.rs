@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::google_drive::{self, GoogleDriveSyncSettings};
+use crate::secret_store;
 use crate::zen::{self, BackupFile, CollectionSelection};
 
 cpp! {{
@@ -28,7 +29,6 @@ struct GuiState {
     backups: Vec<BackupState>,
     active_backup: Option<usize>,
     launch_after_restore: bool,
-    zen_executable: Option<PathBuf>,
     cloud_sync_enabled: bool,
     cloud_sync_status: String,
     cloud_sync_in_progress: bool,
@@ -86,7 +86,9 @@ struct TabState {
 struct AppConfig {
     #[serde(default)]
     cloud_sync_enabled: bool,
-    #[serde(default)]
+    // Legacy field: the refresh token now lives in the desktop keyring. Kept
+    // for reading old config files; never written back.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     google_refresh_token: String,
     #[serde(default = "default_retention_months")]
     retention_months: u8,
@@ -133,10 +135,10 @@ struct AppBridge {
     cloud_sync_progress_total: qt_property!(i32; NOTIFY cloud_sync_progress_changed),
     cloud_sync_progress_text: qt_property!(QString; NOTIFY cloud_sync_progress_changed),
     cloud_sync_progress_changed: qt_signal!(),
-    google_refresh_token: qt_property!(QString; NOTIFY google_refresh_token_changed),
-    google_refresh_token_changed: qt_signal!(),
     google_auth_connected: qt_property!(bool; NOTIFY google_auth_connected_changed),
     google_auth_connected_changed: qt_signal!(),
+    google_auth_in_progress: qt_property!(bool; NOTIFY google_auth_in_progress_changed),
+    google_auth_in_progress_changed: qt_signal!(),
     google_oauth_ready: qt_property!(bool; NOTIFY google_oauth_ready_changed),
     google_oauth_ready_changed: qt_signal!(),
     retention_months: qt_property!(i32; NOTIFY retention_months_changed),
@@ -246,10 +248,10 @@ impl Default for AppBridge {
             cloud_sync_progress_total: 1,
             cloud_sync_progress_text: QString::from(""),
             cloud_sync_progress_changed: Default::default(),
-            google_refresh_token: QString::from(""),
-            google_refresh_token_changed: Default::default(),
             google_auth_connected: false,
             google_auth_connected_changed: Default::default(),
+            google_auth_in_progress: false,
+            google_auth_in_progress_changed: Default::default(),
             google_oauth_ready: false,
             google_oauth_ready_changed: Default::default(),
             retention_months: i32::from(default_retention_months()),
@@ -421,20 +423,41 @@ impl AppBridge {
     }
 
     fn do_connect_google_drive(&mut self) {
-        match google_drive::authorize_with_browser() {
-            Ok(refresh_token) => {
-                self.state.borrow_mut().google_refresh_token = refresh_token;
-                self.publish_cloud_sync_preferences();
-                self.update_cloud_sync_status();
-                if let Err(error) = self.save_config() {
-                    self.set_status(format!(
-                        "Connected Google Drive, but could not persist the refresh token: {error}"
-                    ));
-                } else {
-                    self.set_status("Connected Google Drive. Backup sync is ready.");
+        if self.google_auth_in_progress {
+            self.set_status("Google sign-in is already in progress. Check your browser.");
+            return;
+        }
+
+        self.set_google_auth_in_progress(true);
+        self.set_status("Waiting for Google sign-in in your browser...");
+
+        let qptr = QPointer::from(&*self);
+        let dispatch = queued_callback(move |result: Result<String, String>| {
+            if let Some(bridge) = qptr.as_pinned() {
+                let mut bridge = bridge.borrow_mut();
+                bridge.set_google_auth_in_progress(false);
+                match result {
+                    Ok(refresh_token) => bridge.finish_google_connect(refresh_token),
+                    Err(error) => bridge.set_status(format!("Google sign-in failed: {error}")),
                 }
             }
-            Err(error) => self.set_status(format!("Google sign-in failed: {error}")),
+        });
+
+        thread::spawn(move || {
+            dispatch(google_drive::authorize_with_browser().map_err(|error| error.to_string()));
+        });
+    }
+
+    fn finish_google_connect(&mut self, refresh_token: String) {
+        let store_result = secret_store::store_google_refresh_token(&refresh_token);
+        self.state.borrow_mut().google_refresh_token = refresh_token;
+        self.publish_cloud_sync_preferences();
+        self.update_cloud_sync_status();
+        match store_result {
+            Ok(()) => self.set_status("Connected Google Drive. Backup sync is ready."),
+            Err(error) => self.set_status(format!(
+                "Connected Google Drive, but could not store the refresh token in the keyring: {error}"
+            )),
         }
     }
 
@@ -442,13 +465,21 @@ impl AppBridge {
         self.state.borrow_mut().google_refresh_token.clear();
         self.publish_cloud_sync_preferences();
         self.update_cloud_sync_status();
-        if let Err(error) = self.save_config() {
+        if let Err(error) = secret_store::delete_google_refresh_token() {
             self.set_status(format!(
-                "Disconnected Google Drive in memory, but could not persist it: {error}"
+                "Disconnected Google Drive, but could not remove the stored refresh token: {error}"
             ));
         } else {
             self.set_status("Disconnected Google Drive.");
         }
+    }
+
+    fn set_google_auth_in_progress(&mut self, value: bool) {
+        if self.google_auth_in_progress == value {
+            return;
+        }
+        self.google_auth_in_progress = value;
+        self.google_auth_in_progress_changed();
     }
 
     fn do_set_retention_months(&mut self, value: i32) {
@@ -477,7 +508,7 @@ impl AppBridge {
 
         let qptr = QPointer::from(&*self);
         let dispatch = queued_callback(move |event: SyncUiEvent| {
-            qptr.as_pinned().map(|bridge| {
+            if let Some(bridge) = qptr.as_pinned() {
                 let mut bridge = bridge.borrow_mut();
                 match event {
                     SyncUiEvent::Progress {
@@ -511,7 +542,7 @@ impl AppBridge {
                         }
                     },
                 }
-            });
+            }
         });
 
         thread::spawn(move || {
@@ -642,13 +673,11 @@ impl AppBridge {
             return Ok(());
         }
 
-        let (_profile, backup, launch_after_restore, executable) =
-            self.current_restore_context()?;
+        let (backup, launch_after_restore) = self.current_restore_context()?;
         let destination = zen::copy_backup_to_main_session(&backup.inner, &profile)?;
 
         if launch_after_restore {
-            zen::launch_zen(executable.as_deref())
-                .context("restore succeeded but launching Zen failed")?;
+            zen::launch_zen(None).context("restore succeeded but launching Zen failed")?;
         }
 
         self.update_zen_running();
@@ -681,8 +710,7 @@ impl AppBridge {
             return Ok(());
         }
 
-        let (_profile, backup, launch_after_restore, executable) =
-            self.current_restore_context()?;
+        let (backup, launch_after_restore) = self.current_restore_context()?;
         let selections = backup
             .collections
             .iter()
@@ -708,7 +736,7 @@ impl AppBridge {
 
         let destination = zen::write_filtered_restore(&backup.inner, &profile, &selections)?;
         if launch_after_restore {
-            zen::launch_zen(executable.as_deref())
+            zen::launch_zen(None)
                 .context("selective restore succeeded but launching Zen failed")?;
         }
 
@@ -720,12 +748,8 @@ impl AppBridge {
         Ok(())
     }
 
-    fn current_restore_context(&self) -> Result<(PathBuf, BackupState, bool, Option<PathBuf>)> {
+    fn current_restore_context(&self) -> Result<(BackupState, bool)> {
         let state = self.state.borrow();
-        let profile = state
-            .profile
-            .clone()
-            .ok_or_else(|| anyhow::anyhow!("no Zen profile is loaded"))?;
         let active_index = state
             .active_backup
             .ok_or_else(|| anyhow::anyhow!("no backup is selected"))?;
@@ -734,12 +758,7 @@ impl AppBridge {
             .get(active_index)
             .cloned()
             .ok_or_else(|| anyhow::anyhow!("selected backup is missing"))?;
-        Ok((
-            profile,
-            backup,
-            state.launch_after_restore,
-            state.zen_executable.clone(),
-        ))
+        Ok((backup, state.launch_after_restore))
     }
 
     fn update_zen_running(&mut self) {
@@ -822,8 +841,6 @@ impl AppBridge {
         self.cloud_sync_enabled = state.cloud_sync_enabled;
         self.cloud_sync_enabled_changed();
 
-        self.google_refresh_token = QString::from(state.google_refresh_token.as_str());
-        self.google_refresh_token_changed();
         self.google_auth_connected = !state.google_refresh_token.trim().is_empty();
         self.google_auth_connected_changed();
         self.google_oauth_ready = google_drive::oauth_client_configured();
@@ -854,21 +871,24 @@ impl AppBridge {
         let state = self.state.borrow();
         let config = AppConfig {
             cloud_sync_enabled: state.cloud_sync_enabled,
-            google_refresh_token: state.google_refresh_token.clone(),
+            google_refresh_token: String::new(),
             retention_months: state.retention_months,
         };
 
-        let path = app_config_path()?;
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)
-                .with_context(|| format!("could not create {}", parent.display()))?;
-        }
-
-        let contents = serde_json::to_vec_pretty(&config)?;
-        fs::write(&path, contents)
-            .with_context(|| format!("could not write {}", path.display()))?;
-        Ok(())
+        write_config_file(&config)
     }
+}
+
+fn write_config_file(config: &AppConfig) -> Result<()> {
+    let path = app_config_path()?;
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("could not create {}", parent.display()))?;
+    }
+
+    let contents = serde_json::to_vec_pretty(config)?;
+    fs::write(&path, contents).with_context(|| format!("could not write {}", path.display()))?;
+    Ok(())
 }
 
 impl BackupState {
@@ -951,10 +971,7 @@ impl BackupState {
 pub fn run(profile: Option<PathBuf>, show_about_on_startup: bool) -> Result<()> {
     let mut engine = QmlEngine::new();
     let mut bridge = AppBridge::default();
-    if let Ok(current_dir) = std::env::current_dir() {
-        let icon_path = current_dir.join("assets/restore-zen-session-icon.png");
-        configure_application(&icon_path, resolve_desktop_file_name());
-    }
+    configure_application(resolve_icon_path().as_deref(), resolve_desktop_file_name());
     let initial_profile = profile.or_else(|| zen::detect_default_profile().ok());
     bridge.state.borrow_mut().profile = initial_profile;
     bridge.should_prompt_for_profile = bridge.state.borrow().profile.is_none();
@@ -974,14 +991,23 @@ pub fn run(profile: Option<PathBuf>, show_about_on_startup: bool) -> Result<()> 
     Ok(())
 }
 
-fn configure_application(icon_path: &Path, desktop_file_name: Option<&str>) {
-    let icon_path = QString::from(icon_path.to_string_lossy().as_ref());
+fn configure_application(icon_path: Option<&Path>, desktop_file_name: Option<&str>) {
+    let icon_path = QString::from(
+        icon_path
+            .map(|path| path.to_string_lossy().into_owned())
+            .unwrap_or_default()
+            .as_str(),
+    );
+    let version = QString::from(env!("CARGO_PKG_VERSION"));
     cpp!(unsafe [
-        icon_path as "QString"
+        icon_path as "QString",
+        version as "QString"
     ] {
-        QGuiApplication::setWindowIcon(QIcon(icon_path));
+        if (!icon_path.isEmpty()) {
+            QGuiApplication::setWindowIcon(QIcon(icon_path));
+        }
         QCoreApplication::setApplicationName(QStringLiteral("Restore Zen Session"));
-        QCoreApplication::setApplicationVersion(QStringLiteral("0.5.4"));
+        QCoreApplication::setApplicationVersion(version);
         QCoreApplication::setOrganizationName(QStringLiteral("Pete Vagiakos"));
     });
 
@@ -993,6 +1019,36 @@ fn configure_application(icon_path: &Path, desktop_file_name: Option<&str>) {
     }
 }
 
+fn resolve_icon_path() -> Option<PathBuf> {
+    let mut candidates = Vec::new();
+
+    if let Ok(executable_path) = env::current_exe()
+        && let Some(executable_dir) = executable_path.parent() {
+            candidates.push(executable_dir.join("restore-zen-session-icon.png"));
+            candidates.push(executable_dir.join("assets/restore-zen-session-icon.png"));
+            // `cargo run` places the binary in target/{debug,release}.
+            candidates.push(executable_dir.join("../../assets/restore-zen-session-icon.png"));
+        }
+
+    if let Some(data_dir) = dirs::data_local_dir() {
+        candidates.push(data_dir.join("restore-zen-session/restore-zen-session-icon.png"));
+        candidates.push(data_dir.join("icons/hicolor/512x512/apps/restore-zen-session.png"));
+    }
+
+    for share_dir in ["/usr/local/share", "/usr/share"] {
+        let share_dir = Path::new(share_dir);
+        candidates.push(share_dir.join("restore-zen-session/restore-zen-session-icon.png"));
+        candidates.push(share_dir.join("icons/hicolor/512x512/apps/restore-zen-session.png"));
+        candidates.push(share_dir.join("pixmaps/restore-zen-session.png"));
+    }
+
+    if let Ok(current_dir) = env::current_dir() {
+        candidates.push(current_dir.join("assets/restore-zen-session-icon.png"));
+    }
+
+    candidates.into_iter().find(|path| path.is_file())
+}
+
 fn resolve_desktop_file_name() -> Option<&'static str> {
     if desktop_file_exists() {
         return Some("restore-zen-session");
@@ -1002,14 +1058,13 @@ fn resolve_desktop_file_name() -> Option<&'static str> {
 }
 
 fn desktop_file_exists() -> bool {
-    if let Some(path) = env::var_os("XDG_DESKTOP_FILE_HINT") {
-        if Path::new(&path).is_file() {
+    if let Some(path) = env::var_os("XDG_DESKTOP_FILE_HINT")
+        && Path::new(&path).is_file() {
             return true;
         }
-    }
 
-    if let Ok(executable_path) = env::current_exe() {
-        if let Some(executable_dir) = executable_path.parent() {
+    if let Ok(executable_path) = env::current_exe()
+        && let Some(executable_dir) = executable_path.parent() {
             let candidates = [
                 executable_dir.join("restore-zen-session.desktop"),
                 executable_dir.join("assets/restore-zen-session.desktop"),
@@ -1020,16 +1075,14 @@ fn desktop_file_exists() -> bool {
                 }
             }
         }
-    }
 
-    if let Some(local_share) = dirs::data_local_dir() {
-        if local_share
+    if let Some(local_share) = dirs::data_local_dir()
+        && local_share
             .join("applications/restore-zen-session.desktop")
             .is_file()
         {
             return true;
         }
-    }
 
     if let Some(data_dirs) = env::var_os("XDG_DATA_DIRS") {
         for dir in env::split_paths(&data_dirs) {
@@ -1101,16 +1154,46 @@ fn app_config_path() -> Result<PathBuf> {
 
 fn load_config() -> Result<AppConfig> {
     let path = app_config_path()?;
-    if !path.is_file() {
-        return Ok(AppConfig::default());
+    let mut config = if path.is_file() {
+        let bytes =
+            fs::read(&path).with_context(|| format!("could not read {}", path.display()))?;
+        serde_json::from_slice::<AppConfig>(&bytes)
+            .with_context(|| format!("could not parse {}", path.display()))?
+    } else {
+        AppConfig::default()
+    };
+    config.retention_months =
+        google_drive::clamp_retention_months(i32::from(config.retention_months));
+
+    if config.google_refresh_token.trim().is_empty() {
+        // The token lives in the desktop keyring; a keyring failure should not
+        // block loading the rest of the preferences.
+        match secret_store::load_google_refresh_token() {
+            Ok(token) => config.google_refresh_token = token.unwrap_or_default(),
+            Err(error) => eprintln!(
+                "warning: could not read the Google refresh token from the keyring: {error:#}"
+            ),
+        }
+    } else {
+        // Migrate a plaintext token from older settings.json files into the keyring.
+        match secret_store::store_google_refresh_token(&config.google_refresh_token) {
+            Ok(()) => {
+                let sanitized = AppConfig {
+                    google_refresh_token: String::new(),
+                    ..config.clone()
+                };
+                if let Err(error) = write_config_file(&sanitized) {
+                    eprintln!(
+                        "warning: could not remove the migrated refresh token from {}: {error:#}",
+                        path.display()
+                    );
+                }
+            }
+            Err(error) => eprintln!(
+                "warning: could not migrate the Google refresh token to the keyring: {error:#}"
+            ),
+        }
     }
 
-    let bytes = fs::read(&path).with_context(|| format!("could not read {}", path.display()))?;
-    let config = serde_json::from_slice::<AppConfig>(&bytes)
-        .with_context(|| format!("could not parse {}", path.display()))?;
-    Ok(AppConfig {
-        cloud_sync_enabled: config.cloud_sync_enabled,
-        google_refresh_token: config.google_refresh_token,
-        retention_months: google_drive::clamp_retention_months(i32::from(config.retention_months)),
-    })
+    Ok(config)
 }

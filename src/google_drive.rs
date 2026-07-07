@@ -28,6 +28,8 @@ const GOOGLE_FOLDER_MIME_TYPE: &str = "application/vnd.google-apps.folder";
 const BACKUP_ROOT_FOLDER_NAME: &str = "Backup";
 const BACKUP_ZEN_FOLDER_NAME: &str = "Zen";
 const GOOGLE_DRIVE_SCOPE: &str = "https://www.googleapis.com/auth/drive";
+const USER_AGENT: &str = concat!("zen-session-restore/", env!("CARGO_PKG_VERSION"));
+
 #[derive(Debug, Clone)]
 pub struct GoogleDriveSyncSettings {
     pub refresh_token: String,
@@ -62,11 +64,15 @@ struct TokenResponse {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct FileListResponse {
     files: Vec<DriveFile>,
+    #[serde(default)]
+    next_page_token: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct DriveFile {
     id: String,
     name: String,
@@ -114,7 +120,7 @@ pub fn store_oauth_client(client_id: &str, client_secret: &str) -> Result<()> {
 pub fn authorize_with_browser() -> Result<String> {
     let oauth_client = oauth_client()?;
     let client = Client::builder()
-        .user_agent("zen-session-restore/0.5.4")
+        .user_agent(USER_AGENT)
         .build()
         .context("failed to create Google OAuth client")?;
 
@@ -189,7 +195,7 @@ pub fn sync_backup_folder(
 
     on_progress(GoogleDriveSyncProgress {
         current_step: 0,
-        total_steps: 1,
+        total_steps: 5,
         message: format!("Scanning {}", local_backup_dir.display()),
     });
     let pruned_local_files = prune_old_local_backups(local_backup_dir, settings.retention_months)?;
@@ -203,7 +209,7 @@ pub fn sync_backup_folder(
     });
     let local_files = collect_local_files(local_backup_dir)?;
     let client = Client::builder()
-        .user_agent("zen-session-restore/0.5.4")
+        .user_agent(USER_AGENT)
         .build()
         .context("failed to create Google Drive client")?;
     on_progress(GoogleDriveSyncProgress {
@@ -247,8 +253,11 @@ pub fn sync_backup_folder(
             total_steps,
             message: format!("Checking {}", local_file.name),
         });
-        let should_upload = match remote_by_name.get(&local_file.name) {
-            Some(remote) => remote_needs_update(remote, local_file)?,
+        let existing_remote = remote_by_name.get(&local_file.name);
+        let file_bytes = fs::read(&local_file.path)
+            .with_context(|| format!("failed to read {}", local_file.path.display()))?;
+        let should_upload = match existing_remote {
+            Some(remote) => remote_needs_update(remote, local_file, &file_bytes)?,
             None => true,
         };
 
@@ -263,9 +272,8 @@ pub fn sync_backup_folder(
                 &access_token,
                 &zen_folder_id,
                 local_file,
-                remote_by_name
-                    .get(&local_file.name)
-                    .map(|file| file.id.as_str()),
+                file_bytes,
+                existing_remote.map(|file| file.id.as_str()),
             )?;
             uploaded_files += 1;
         }
@@ -404,26 +412,50 @@ fn list_child_files(
     parent_id: &str,
 ) -> Result<Vec<DriveFile>> {
     let query = format!("'{}' in parents and trashed = false", parent_id);
-    let response = client
-        .get(GOOGLE_DRIVE_FILES_URL)
-        .header(AUTHORIZATION, bearer(access_token))
-        .query(&[
-            ("q", query.as_str()),
-            ("fields", "files(id,name,mimeType,md5Checksum,size,trashed)"),
-            ("spaces", "drive"),
-            ("pageSize", "1000"),
-        ])
-        .send()
-        .context("failed to list Google Drive folder contents")?;
-    let response = ensure_success(response, "Google Drive folder listing failed")?;
+    let mut files = Vec::new();
+    let mut page_token: Option<String> = None;
 
-    Ok(response
-        .json::<FileListResponse>()
-        .context("failed to parse Google Drive folder listing")?
-        .files)
+    loop {
+        let mut params = vec![
+            ("q", query.clone()),
+            (
+                "fields",
+                "nextPageToken,files(id,name,mimeType,md5Checksum,size,trashed)".to_owned(),
+            ),
+            ("spaces", "drive".to_owned()),
+            ("pageSize", "1000".to_owned()),
+        ];
+        if let Some(token) = page_token.take() {
+            params.push(("pageToken", token));
+        }
+
+        let response = client
+            .get(GOOGLE_DRIVE_FILES_URL)
+            .header(AUTHORIZATION, bearer(access_token))
+            .query(&params)
+            .send()
+            .context("failed to list Google Drive folder contents")?;
+        let response = ensure_success(response, "Google Drive folder listing failed")?;
+
+        let page = response
+            .json::<FileListResponse>()
+            .context("failed to parse Google Drive folder listing")?;
+        files.extend(page.files);
+
+        match page.next_page_token {
+            Some(token) => page_token = Some(token),
+            None => break,
+        }
+    }
+
+    Ok(files)
 }
 
-fn remote_needs_update(remote: &DriveFile, local: &LocalFileState) -> Result<bool> {
+fn remote_needs_update(
+    remote: &DriveFile,
+    local: &LocalFileState,
+    file_bytes: &[u8],
+) -> Result<bool> {
     let remote_size = remote
         .size
         .as_deref()
@@ -435,11 +467,7 @@ fn remote_needs_update(remote: &DriveFile, local: &LocalFileState) -> Result<boo
         return Ok(true);
     }
 
-    let local_md5 = md5::compute(
-        fs::read(&local.path)
-            .with_context(|| format!("failed to read {}", local.path.display()))?,
-    );
-    let local_md5_hex = format!("{:x}", local_md5);
+    let local_md5_hex = format!("{:x}", md5::compute(file_bytes));
     Ok(remote.md5_checksum.as_deref() != Some(local_md5_hex.as_str()))
 }
 
@@ -448,6 +476,7 @@ fn upload_file(
     access_token: &str,
     folder_id: &str,
     local: &LocalFileState,
+    file_bytes: Vec<u8>,
     existing_file_id: Option<&str>,
 ) -> Result<()> {
     let metadata_body = if existing_file_id.is_some() {
@@ -458,8 +487,6 @@ fn upload_file(
             "parents": [folder_id],
         }))?
     };
-    let file_bytes = fs::read(&local.path)
-        .with_context(|| format!("failed to read {}", local.path.display()))?;
 
     let form = multipart::Form::new()
         .part(
@@ -543,6 +570,15 @@ fn prune_old_local_backups(local_backup_dir: &Path, retention_months: u8) -> Res
         let entry = entry?;
         let path = entry.path();
         if !path.is_file() {
+            continue;
+        }
+        let is_backup = path
+            .file_name()
+            .and_then(|value| value.to_str())
+            .is_some_and(|name| {
+                name.ends_with(".jsonlz4") || name.ends_with(".baklz4") || name.ends_with(".json")
+            });
+        if !is_backup {
             continue;
         }
 
@@ -637,11 +673,36 @@ fn wait_for_oauth_code(
     loop {
         match listener.accept() {
             Ok((mut stream, _)) => {
-                let mut buffer = [0u8; 4096];
-                let bytes_read = stream
-                    .read(&mut buffer)
-                    .context("failed to read OAuth callback")?;
-                let request = String::from_utf8_lossy(&buffer[..bytes_read]);
+                // The accepted stream inherits the listener's non-blocking mode.
+                stream
+                    .set_nonblocking(false)
+                    .context("failed to configure OAuth callback stream")?;
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(5)))
+                    .context("failed to configure OAuth callback stream")?;
+                let mut request_bytes = Vec::with_capacity(4096);
+                let mut buffer = [0u8; 1024];
+                // Read until the request line is complete; browsers may split the request
+                // across TCP segments.
+                while !request_bytes.windows(2).any(|pair| pair == b"\r\n")
+                    && request_bytes.len() < 16 * 1024
+                {
+                    let bytes_read = match stream.read(&mut buffer) {
+                        Ok(0) => break,
+                        Ok(bytes_read) => bytes_read,
+                        Err(error)
+                            if error.kind() == std::io::ErrorKind::WouldBlock
+                                || error.kind() == std::io::ErrorKind::TimedOut =>
+                        {
+                            break;
+                        }
+                        Err(error) => {
+                            return Err(error).context("failed to read OAuth callback");
+                        }
+                    };
+                    request_bytes.extend_from_slice(&buffer[..bytes_read]);
+                }
+                let request = String::from_utf8_lossy(&request_bytes);
                 let request_line = request.lines().next().unwrap_or_default();
                 let path = request_line
                     .split_whitespace()
@@ -688,5 +749,44 @@ fn wait_for_oauth_code(
             }
             Err(error) => return Err(error).context("failed while waiting for OAuth callback"),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+
+    use super::prune_old_local_backups;
+
+    #[test]
+    fn prune_only_touches_backup_files() {
+        let dir = std::env::temp_dir().join(format!(
+            "zen-session-restore-prune-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("time went backwards")
+                .as_nanos()
+        ));
+        fs::create_dir_all(&dir).expect("create test dir");
+
+        let backup = dir.join("zen-sessions-2020-01-01-00.jsonlz4");
+        let other = dir.join("notes.txt");
+        fs::write(&backup, b"old backup").expect("write backup");
+        fs::write(&other, b"keep me").expect("write other file");
+
+        let old =
+            std::time::SystemTime::now() - std::time::Duration::from_secs(60 * 60 * 24 * 400);
+        for path in [&backup, &other] {
+            let file = fs::File::open(path).expect("open file");
+            file.set_modified(old).expect("set mtime");
+        }
+
+        let removed = prune_old_local_backups(&dir, 1).expect("prune");
+        assert_eq!(removed, 1);
+        assert!(!backup.exists(), "expired backup should be removed");
+        assert!(other.exists(), "non-backup files must be left alone");
+
+        fs::remove_dir_all(&dir).expect("cleanup");
     }
 }

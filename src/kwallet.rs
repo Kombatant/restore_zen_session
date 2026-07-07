@@ -1,11 +1,13 @@
 use std::process::Command;
+use std::sync::OnceLock;
 
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 
-const QDBUS_BINARY: &str = "qdbus";
+const QDBUS_BINARIES: [&str; 3] = ["qdbus", "qdbus6", "qdbus-qt6"];
 const WALLET_FOLDER: &str = "Restore Zen Session";
 const WALLET_ENTRY_GOOGLE_OAUTH: &str = "google_oauth_client";
+const WALLET_ENTRY_GOOGLE_REFRESH_TOKEN: &str = "google_refresh_token";
 const APP_ID: &str = "restore-zen-session";
 const DBUS_INTERFACE: &str = "org.kde.KWallet";
 const DBUS_CANDIDATES: [(&str, &str); 2] = [
@@ -53,6 +55,46 @@ pub fn store_google_oauth_client(client_id: &str, client_secret: &str) -> Result
     session.ensure_folder(WALLET_FOLDER)?;
     session.write_password(WALLET_FOLDER, WALLET_ENTRY_GOOGLE_OAUTH, &payload)?;
     Ok(())
+}
+
+pub fn load_google_refresh_token() -> Result<Option<String>> {
+    let session = KWalletSession::connect()?;
+    if !session.folder_exists(WALLET_FOLDER)? {
+        return Ok(None);
+    }
+    if !session.entry_exists(WALLET_FOLDER, WALLET_ENTRY_GOOGLE_REFRESH_TOKEN)? {
+        return Ok(None);
+    }
+
+    let token = session.read_password(WALLET_FOLDER, WALLET_ENTRY_GOOGLE_REFRESH_TOKEN)?;
+    if token.trim().is_empty() {
+        return Ok(None);
+    }
+    Ok(Some(token))
+}
+
+pub fn store_google_refresh_token(refresh_token: &str) -> Result<()> {
+    let refresh_token = refresh_token.trim();
+    if refresh_token.is_empty() {
+        bail!("Google refresh token is required");
+    }
+
+    let session = KWalletSession::connect()?;
+    session.ensure_folder(WALLET_FOLDER)?;
+    session.write_password(WALLET_FOLDER, WALLET_ENTRY_GOOGLE_REFRESH_TOKEN, refresh_token)?;
+    Ok(())
+}
+
+pub fn delete_google_refresh_token() -> Result<()> {
+    let session = KWalletSession::connect()?;
+    if !session.folder_exists(WALLET_FOLDER)? {
+        return Ok(());
+    }
+    if !session.entry_exists(WALLET_FOLDER, WALLET_ENTRY_GOOGLE_REFRESH_TOKEN)? {
+        return Ok(());
+    }
+
+    session.remove_entry(WALLET_FOLDER, WALLET_ENTRY_GOOGLE_REFRESH_TOKEN)
 }
 
 struct KWalletSession {
@@ -167,6 +209,27 @@ impl KWalletSession {
 
         Ok(())
     }
+
+    fn remove_entry(&self, folder: &str, entry: &str) -> Result<()> {
+        let handle = self.handle.to_string();
+        let output = run_qdbus(
+            self.service,
+            self.path,
+            "removeEntry",
+            &[&handle, folder, entry, APP_ID],
+        )?;
+        let status = parse_i32(&output)?;
+        if status != 0 {
+            bail!(
+                "KDE Wallet rejected removing '{}' from folder '{}' (status {})",
+                entry,
+                folder,
+                status
+            );
+        }
+
+        Ok(())
+    }
 }
 
 fn resolve_wallet_name(service: &'static str, path: &'static str) -> Result<String> {
@@ -180,15 +243,31 @@ fn resolve_wallet_name(service: &'static str, path: &'static str) -> Result<Stri
     bail!("KDE Wallet did not report a wallet name")
 }
 
+fn qdbus_binary() -> &'static str {
+    static BINARY: OnceLock<&'static str> = OnceLock::new();
+    BINARY.get_or_init(|| {
+        QDBUS_BINARIES
+            .into_iter()
+            .find(|binary| {
+                Command::new(binary)
+                    .arg("--literal")
+                    .output()
+                    .is_ok()
+            })
+            .unwrap_or(QDBUS_BINARIES[0])
+    })
+}
+
 fn run_qdbus(service: &str, path: &str, method: &str, args: &[&str]) -> Result<String> {
+    let binary = qdbus_binary();
     let method_name = format!("{DBUS_INTERFACE}.{method}");
-    let output = Command::new(QDBUS_BINARY)
+    let output = Command::new(binary)
         .arg(service)
         .arg(path)
         .arg(method_name)
         .args(args)
         .output()
-        .with_context(|| format!("failed to start {QDBUS_BINARY}"))?;
+        .with_context(|| format!("failed to start {binary}"))?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_owned();

@@ -1148,8 +1148,8 @@ ApplicationWindow {
 
                                                                 ActionButton {
                                                                     Layout.fillWidth: true
-                                                                    text: !backendRef || !backendRef.google_oauth_ready ? "Set Up Google Drive" : (backendRef.google_auth_connected ? "Reconnect Google Drive" : "Connect Google Drive")
-                                                                    enabled: !!backendRef
+                                                                    text: !backendRef || !backendRef.google_oauth_ready ? "Set Up Google Drive" : (backendRef.google_auth_in_progress ? "Waiting for Browser..." : (backendRef.google_auth_connected ? "Reconnect Google Drive" : "Connect Google Drive"))
+                                                                    enabled: !!backendRef && !backendRef.google_auth_in_progress
                                                                     onClicked: {
                                                                         if (!backendRef)
                                                                             return ;
@@ -1166,7 +1166,7 @@ ApplicationWindow {
                                                                     Layout.fillWidth: true
                                                                     text: "Disconnect"
                                                                     warning: true
-                                                                    enabled: !!backendRef && backendRef.google_oauth_ready && backendRef.google_auth_connected
+                                                                    enabled: !!backendRef && backendRef.google_oauth_ready && backendRef.google_auth_connected && !backendRef.google_auth_in_progress
                                                                     onClicked: {
                                                                         if (backendRef) {
                                                                             backendRef.disconnect_google_drive();
@@ -1653,7 +1653,7 @@ ApplicationWindow {
             }
 
             Label {
-                text: "Version 0.5.4"
+                text: "Version " + Qt.application.version
                 color: palette.windowText
             }
 
